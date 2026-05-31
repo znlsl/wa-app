@@ -248,7 +248,7 @@ func (s *Server) waAccountAndProfile(ctx context.Context, workspaceID string, wa
 	if err != nil {
 		return nil, nil, err
 	}
-	account, err := s.store.GetWAAccount(ctx, workspaceID, accountID)
+	account, err := s.getWAAccount(ctx, workspaceID, accountID)
 	if err != nil {
 		return nil, nil, err
 	}

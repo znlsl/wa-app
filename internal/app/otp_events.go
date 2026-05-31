@@ -23,7 +23,7 @@ func (s *Server) publishOTPCandidates(ctx context.Context, reqCtx *waappv1.Reque
 	if source == wav1.WaOtpSource_WA_OTP_SOURCE_UNSPECIFIED {
 		source = wav1.WaOtpSource_WA_OTP_SOURCE_MANUAL_EXTRACTION
 	}
-	account, _ := s.store.GetWAAccount(ctx, workspaceID, session.GetWaAccountId())
+	account, _ := s.getWAAccount(ctx, workspaceID, session.GetWaAccountId())
 	for _, candidate := range candidates {
 		if candidate.GetKind() != waappv1.CandidateKind_CANDIDATE_KIND_OTP {
 			continue

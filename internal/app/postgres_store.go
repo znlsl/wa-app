@@ -128,7 +128,7 @@ func (s *PostgresStore) ListWAAccounts(ctx context.Context, workspaceID string, 
 		return nil, "", NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, err.Error(), false)
 	}
 	limit = pagex.NormalizePageLimit(limit)
-	rows, err := s.queryWAAccountPage(ctx, workspaceID, cursor, limit+1)
+	rows, err := s.queryWAAccountPage(ctx, workspaceID, cursor, pagex.KeysetLookaheadLimit(limit))
 	if err != nil {
 		return nil, "", err
 	}
@@ -144,18 +144,15 @@ func (s *PostgresStore) ListWAAccounts(ctx context.Context, workspaceID string, 
 	if err := rows.Err(); err != nil {
 		return nil, "", err
 	}
-	accounts, hasMore := pagex.TrimLimit(accounts, limit)
-	nextCursor := ""
-	if hasMore && len(accounts) > 0 {
-		last := accounts[len(accounts)-1]
-		nextCursor = pagex.EncodeKeysetCursor(waAccountUpdatedAt(last), waAccountID(last))
-	}
-	return accounts, nextCursor, nil
+	page := pagex.NewKeysetPage(accounts, limit, func(account *waappv1.WAAccount) pagex.KeysetCursor {
+		return pagex.KeysetCursorValue(waAccountUpdatedAt(account), waAccountID(account))
+	})
+	return page.Items, page.NextCursor, nil
 }
 
 func (s *PostgresStore) queryWAAccountPage(ctx context.Context, workspaceID string, cursor pagex.KeysetCursor, limit int) (pgx.Rows, error) {
 	const base = `SELECT wa_account_id,workspace_id,e164_number,country_calling_code,national_number,country_iso2,status,created_at,updated_at FROM wa_accounts WHERE workspace_id=$1`
-	if cursor.ID == "" {
+	if !pagex.HasKeysetCursor(cursor) {
 		return s.pool.Query(ctx, base+` ORDER BY updated_at DESC, wa_account_id DESC LIMIT $2`, workspaceID, limit)
 	}
 	return s.pool.Query(ctx, base+` AND (updated_at, wa_account_id) < ($2, $3) ORDER BY updated_at DESC, wa_account_id DESC LIMIT $4`, workspaceID, cursor.UpdatedAt, cursor.ID, limit)

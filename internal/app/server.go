@@ -126,10 +126,10 @@ func (s *Server) CreateWAAccount(ctx context.Context, req *waappv1.CreateWAAccou
 	}
 	now := s.clock.Now()
 	account := newWAAccount(s.ids.NewID("waacc_"), workspaceID, phone, waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_ACTIVE, &waappv1.AuditStamp{CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)})
-	if err := s.store.SaveWAAccount(ctx, account); err != nil {
+	account, err := s.saveWAAccount(ctx, workspaceID, account)
+	if err != nil {
 		return &waappv1.CreateWAAccountResponse{Error: ToProtoError(err)}, nil
 	}
-	s.publishWAAccountUpserted(ctx, account)
 	return &waappv1.CreateWAAccountResponse{Account: account}, nil
 }
 
@@ -141,7 +141,7 @@ func (s *Server) GetWAAccount(ctx context.Context, req *waappv1.GetWAAccountRequ
 	if err != nil {
 		return &waappv1.GetWAAccountResponse{Error: ToProtoError(err)}, nil
 	}
-	account, err := s.store.GetWAAccount(ctx, req.GetContext().GetWorkspaceId(), accountID)
+	account, err := s.getWAAccount(ctx, req.GetContext().GetWorkspaceId(), accountID)
 	if err != nil {
 		return &waappv1.GetWAAccountResponse{Error: ToProtoError(err)}, nil
 	}
@@ -152,7 +152,7 @@ func (s *Server) ListWAAccounts(ctx context.Context, req *waappv1.ListWAAccounts
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.ListWAAccountsResponse{Error: ToProtoError(err)}, nil
 	}
-	accounts, nextCursor, err := s.store.ListWAAccounts(ctx, req.GetContext().GetWorkspaceId(), req.GetCursor(), int(req.GetLimit()))
+	accounts, nextCursor, err := s.listWAAccounts(ctx, req.GetContext().GetWorkspaceId(), req.GetCursor(), int(req.GetLimit()))
 	if err != nil {
 		return &waappv1.ListWAAccountsResponse{Error: ToProtoError(err)}, nil
 	}
@@ -168,7 +168,7 @@ func (s *Server) PrepareClientProfile(ctx context.Context, req *waappv1.PrepareC
 	if err != nil {
 		return &waappv1.PrepareClientProfileResponse{Error: ToProtoError(err)}, nil
 	}
-	account, err := s.store.GetWAAccount(ctx, workspaceID, accountID)
+	account, err := s.getWAAccount(ctx, workspaceID, accountID)
 	if err != nil {
 		return &waappv1.PrepareClientProfileResponse{Error: ToProtoError(err)}, nil
 	}

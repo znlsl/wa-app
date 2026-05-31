@@ -1,4 +1,4 @@
-import { ACCOUNT_PAGE_SIZE, api, cursorPageURL } from '@byte-v-forge/common-ui';
+import { ACCOUNT_PAGE_SIZE, api, fetchAccountList } from '@byte-v-forge/common-ui';
 import type { GetLongConnectionStatusResponse, LongConnectionState } from '../proto/byte/v/forge/waapp/v1/messaging';
 import type { ListWAAccountsResponse, WAAccount } from '../proto/byte/v/forge/waapp/v1/profile';
 
@@ -45,11 +45,12 @@ export function getWaConnections(workspaceId: string) {
 }
 
 export function getWaAccounts(workspaceId: string, cursor = '') {
-  return api<ListWAAccountsResponse>(cursorPageURL('/api/wa/accounts', {
+  return fetchAccountList<WAAccount, ListWAAccountsResponse>({
+    path: '/api/wa/accounts',
     cursor,
     limit: ACCOUNT_PAGE_SIZE,
     params: { workspace_id: workspaceId || 'default' }
-  }));
+  });
 }
 
 export function probeWaNumber(input: WaPhoneInput) {

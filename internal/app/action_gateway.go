@@ -294,10 +294,10 @@ func (s *Server) commitNativeState(ctx context.Context, reqCtx *waappv1.RequestC
 	if err != nil {
 		now := s.clock.Now()
 		account = newWAAccount(s.ids.NewID("waacc_"), workspaceID, phone, waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_ACTIVE, &waappv1.AuditStamp{CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)})
-		if err := s.store.SaveWAAccount(ctx, account); err != nil {
+		account, err = s.saveWAAccount(ctx, workspaceID, account)
+		if err != nil {
 			return nil, nil, nil, err
 		}
-		s.publishWAAccountUpserted(ctx, account)
 	}
 	protocol, err := s.ensureDefaultProtocolProfile(ctx, workspaceID)
 	if err != nil {

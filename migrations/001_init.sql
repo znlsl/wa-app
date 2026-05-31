@@ -175,3 +175,128 @@ CREATE TABLE IF NOT EXISTS wa_extracted_candidates (
   confidence DOUBLE PRECISION NOT NULL DEFAULT 0,
   extracted_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+DO $$
+DECLARE
+  wa_table_name TEXT;
+  wa_constraint_name TEXT;
+BEGIN
+  IF to_regclass('wa_targets') IS NOT NULL THEN
+    INSERT INTO wa_accounts (
+      wa_account_id,
+      workspace_id,
+      e164_number,
+      country_calling_code,
+      national_number,
+      country_iso2,
+      status,
+      created_at,
+      updated_at
+    )
+    SELECT
+      target_id,
+      workspace_id,
+      e164_number,
+      country_calling_code,
+      national_number,
+      country_iso2,
+      status,
+      created_at,
+      updated_at
+    FROM wa_targets
+    ON CONFLICT (wa_account_id) DO UPDATE SET
+      workspace_id = EXCLUDED.workspace_id,
+      e164_number = EXCLUDED.e164_number,
+      country_calling_code = EXCLUDED.country_calling_code,
+      national_number = EXCLUDED.national_number,
+      country_iso2 = EXCLUDED.country_iso2,
+      status = EXCLUDED.status,
+      updated_at = EXCLUDED.updated_at;
+  END IF;
+
+  FOR wa_table_name IN
+    SELECT unnest(ARRAY[
+      'wa_client_profiles',
+      'wa_account_probes',
+      'wa_verification_requests',
+      'wa_registrations',
+      'wa_login_states',
+      'wa_message_sessions'
+    ])
+  LOOP
+    IF EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = current_schema()
+        AND table_name = wa_table_name
+        AND column_name = 'target_id'
+    ) AND NOT EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = current_schema()
+        AND table_name = wa_table_name
+        AND column_name = 'wa_account_id'
+    ) THEN
+      EXECUTE format('ALTER TABLE %I RENAME COLUMN target_id TO wa_account_id', wa_table_name);
+    END IF;
+  END LOOP;
+
+  FOR wa_constraint_name, wa_table_name IN
+    SELECT c.conname, rel.relname
+    FROM pg_constraint c
+    JOIN pg_class rel ON rel.oid = c.conrelid
+    JOIN pg_class ref ON ref.oid = c.confrelid
+    JOIN pg_namespace ns ON ns.oid = rel.relnamespace
+    WHERE ns.nspname = current_schema()
+      AND c.contype = 'f'
+      AND ref.relname = 'wa_targets'
+      AND rel.relname = ANY (ARRAY[
+        'wa_client_profiles',
+        'wa_account_probes',
+        'wa_verification_requests',
+        'wa_registrations',
+        'wa_login_states',
+        'wa_message_sessions'
+      ])
+  LOOP
+    EXECUTE format('ALTER TABLE %I DROP CONSTRAINT %I', wa_table_name, wa_constraint_name);
+  END LOOP;
+
+  FOR wa_table_name IN
+    SELECT unnest(ARRAY[
+      'wa_client_profiles',
+      'wa_account_probes',
+      'wa_verification_requests',
+      'wa_registrations',
+      'wa_login_states',
+      'wa_message_sessions'
+    ])
+  LOOP
+    IF EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = current_schema()
+        AND table_name = wa_table_name
+        AND column_name = 'wa_account_id'
+    ) AND NOT EXISTS (
+      SELECT 1
+      FROM pg_constraint c
+      JOIN pg_class rel ON rel.oid = c.conrelid
+      JOIN pg_namespace ns ON ns.oid = rel.relnamespace
+      WHERE ns.nspname = current_schema()
+        AND rel.relname = wa_table_name
+        AND c.contype = 'f'
+        AND c.conname = wa_table_name || '_wa_account_id_fkey'
+    ) THEN
+      EXECUTE format(
+        'ALTER TABLE %I ADD CONSTRAINT %I FOREIGN KEY (wa_account_id) REFERENCES wa_accounts(wa_account_id)',
+        wa_table_name,
+        wa_table_name || '_wa_account_id_fkey'
+      );
+    END IF;
+  END LOOP;
+
+  IF to_regclass('wa_targets') IS NOT NULL THEN
+    DROP TABLE wa_targets;
+  END IF;
+END $$;
