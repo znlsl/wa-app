@@ -219,7 +219,7 @@
         "sendBody": true,
         "contentType": "json",
         "specifyBody": "json",
-        "jsonBody": "={{ { workspace_id: $('Normalize Registration Input').first().json.workspace_id, job_id: $('Normalize Registration Input').first().json.job_id, verification_request_id: (($('Request SMS OTP').first().json.body || $('Request SMS OTP').first().json).verification_request_id || ''), code: $('Normalize OTP Event').first().json.otp, proxy: $('Run WA US Dynamic IP').first().json, proxy_url: $('Run WA US Dynamic IP').first().json.proxy_url || '' } }}",
+        "jsonBody": "={{ { workspace_id: $('Normalize Registration Input').first().json.workspace_id, job_id: $('Normalize Registration Input').first().json.job_id, verification_request_id: (($('Request SMS OTP').first().json.body || $('Request SMS OTP').first().json).verification_request_id || ''), code: $('Normalize OTP Event').first().json.verification_code, proxy: $('Run WA US Dynamic IP').first().json, proxy_url: $('Run WA US Dynamic IP').first().json.proxy_url || '' } }}",
         "options": {
           "response": {
             "response": {
@@ -281,7 +281,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "\nconst response = $('Request SMS OTP').first().json.body || $('Request SMS OTP').first().json || {};\nreturn [{ json: { success: false, status: 'OTP_REQUEST_FAILED', error_message: response.error_message || response.error?.message || 'sms otp request failed', phone: $('Normalize Registration Input').first().json.phone, data: response } }];\n"
+        "jsCode": "\nconst response = $('Request SMS OTP').first().json.body || $('Request SMS OTP').first().json || {};\nconst commit = $('Commit Fingerprint To Profile').first().json.body || $('Commit Fingerprint To Profile').first().json || {};\nconst verification = response.verification_request || {};\nreturn [{ json: {\n  success: false,\n  status: 'OTP_REQUEST_FAILED',\n  error_message: response.error_message || response.error?.message || 'sms otp request failed',\n  phone: $('Normalize Registration Input').first().json.phone,\n  wa_account_id: commit.wa_account_id || response.wa_account_id || verification.wa_account_id || '',\n  client_profile_id: commit.client_profile_id || response.client_profile_id || verification.client_profile_id || '',\n  verification_request_id: response.verification_request_id || verification.verification_request_id || '',\n  data: response,\n} }];\n"
       },
       "id": "wa-register-otp-request-failed",
       "name": "Build OTP Request Failure",
@@ -295,7 +295,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "\nreturn [{ json: { success: false, status: 'OTP_TIMEOUT', error_message: 'otp was not provided before wait timeout', phone: $('Normalize Registration Input').first().json.phone } }];\n"
+        "jsCode": "\nconst commit = $('Commit Fingerprint To Profile').first().json.body || $('Commit Fingerprint To Profile').first().json || {};\nconst request = $('Request SMS OTP').first().json.body || $('Request SMS OTP').first().json || {};\nconst verification = request.verification_request || {};\nreturn [{ json: {\n  success: false,\n  status: 'OTP_TIMEOUT',\n  error_message: 'otp was not provided before wait timeout',\n  phone: $('Normalize Registration Input').first().json.phone,\n  wa_account_id: commit.wa_account_id || verification.wa_account_id || '',\n  client_profile_id: commit.client_profile_id || verification.client_profile_id || '',\n  verification_request_id: request.verification_request_id || verification.verification_request_id || '',\n} }];\n"
       },
       "id": "wa-register-otp-timeout",
       "name": "Build OTP Timeout",
@@ -552,6 +552,84 @@
         1200,
         -140
       ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.WA_ACTION_API_BASE_URL + '/registration/cleanup-failed-account' }}",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { workspace_id: $('Normalize Registration Input').first().json.workspace_id, job_id: $('Normalize Registration Input').first().json.job_id, phone: $('Normalize Registration Input').first().json.phone, wa_account_id: (($('Commit Fingerprint To Profile').first().json.body || $('Commit Fingerprint To Profile').first().json).wa_account_id || ''), verification_request_id: (($('Request SMS OTP').first().json.body || $('Request SMS OTP').first().json).verification_request_id || (($('Request SMS OTP').first().json.body || $('Request SMS OTP').first().json).verification_request || {}).verification_request_id || ''), data: $('Build OTP Request Failure').first().json } }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "wa-register-cleanup-otp-failure",
+      "name": "Cleanup Pending WA Account After OTP Failure",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2400,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.WA_ACTION_API_BASE_URL + '/registration/cleanup-failed-account' }}",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { workspace_id: $('Normalize Registration Input').first().json.workspace_id, job_id: $('Normalize Registration Input').first().json.job_id, phone: $('Normalize Registration Input').first().json.phone, wa_account_id: (($('Commit Fingerprint To Profile').first().json.body || $('Commit Fingerprint To Profile').first().json).wa_account_id || ''), verification_request_id: (($('Request SMS OTP').first().json.body || $('Request SMS OTP').first().json).verification_request_id || (($('Request SMS OTP').first().json.body || $('Request SMS OTP').first().json).verification_request || {}).verification_request_id || ''), data: $('Build OTP Timeout').first().json } }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "wa-register-cleanup-timeout",
+      "name": "Cleanup Pending WA Account After Timeout",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3360,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.WA_ACTION_API_BASE_URL + '/registration/cleanup-failed-account' }}",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { workspace_id: $('Normalize Registration Input').first().json.workspace_id, job_id: $('Normalize Registration Input').first().json.job_id, phone: $('Normalize Registration Input').first().json.phone, wa_account_id: (($('Commit Fingerprint To Profile').first().json.body || $('Commit Fingerprint To Profile').first().json).wa_account_id || ''), verification_request_id: (($('Request SMS OTP').first().json.body || $('Request SMS OTP').first().json).verification_request_id || (($('Request SMS OTP').first().json.body || $('Request SMS OTP').first().json).verification_request || {}).verification_request_id || ''), data: $('Build Registration Success').first().json } }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "wa-register-cleanup-registration-result",
+      "name": "Cleanup Pending WA Account After Registration Result",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3920,
+        -360
+      ]
     }
   ],
   "connections": {
@@ -767,7 +845,7 @@
       "main": [
         [
           {
-            "node": "Return Registration Success",
+            "node": "Cleanup Pending WA Account After Registration Result",
             "type": "main",
             "index": 0
           }
@@ -778,7 +856,7 @@
       "main": [
         [
           {
-            "node": "Return OTP Request Failure",
+            "node": "Cleanup Pending WA Account After OTP Failure",
             "type": "main",
             "index": 0
           }
@@ -789,7 +867,7 @@
       "main": [
         [
           {
-            "node": "Return OTP Timeout",
+            "node": "Cleanup Pending WA Account After Timeout",
             "type": "main",
             "index": 0
           }
@@ -812,6 +890,39 @@
         [
           {
             "node": "Commit Fingerprint To Profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cleanup Pending WA Account After Registration Result": {
+      "main": [
+        [
+          {
+            "node": "Return Registration Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cleanup Pending WA Account After OTP Failure": {
+      "main": [
+        [
+          {
+            "node": "Return OTP Request Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cleanup Pending WA Account After Timeout": {
+      "main": [
+        [
+          {
+            "node": "Return OTP Timeout",
             "type": "main",
             "index": 0
           }

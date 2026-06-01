@@ -62,6 +62,8 @@ func (g *actionGateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		result, err = g.resumeOTP(r.Context(), payload)
 	case "registration/submit-otp":
 		result, err = g.submitOTP(r.Context(), payload)
+	case "registration/cleanup-failed-account":
+		result, err = g.cleanupFailedRegistration(r.Context(), payload)
 	case "registration/persist-login-state":
 		result, err = g.persistLoginState(r.Context(), payload)
 	case "registration/check-login-state":
@@ -339,6 +341,45 @@ func (g *actionGateway) submitOTP(ctx context.Context, payload map[string]any) (
 	}, nil
 }
 
+func (g *actionGateway) cleanupFailedRegistration(ctx context.Context, payload map[string]any) (map[string]any, error) {
+	reqCtx := actionContext(payload)
+	accountID := cleanupWAAccountID(payload)
+	verificationRequestID := cleanupVerificationRequestID(payload)
+	if verificationRequestID != "" || accountID != "" {
+		_ = g.deleteRegistrationOTPWait(ctx, registrationOTPWait{
+			WorkspaceID:           reqCtx.GetWorkspaceId(),
+			WAAccountID:           accountID,
+			VerificationRequestID: verificationRequestID,
+		})
+	}
+	if accountID == "" {
+		return map[string]any{"success": true, "deleted": false, "reason": "missing_wa_account_id"}, nil
+	}
+	normalizedAccountID, err := requireWAAccountID(accountID)
+	if err != nil {
+		return nil, err
+	}
+	account, err := g.server.getWAAccount(ctx, reqCtx.GetWorkspaceId(), normalizedAccountID)
+	if isWAAccountNotFound(err) {
+		return map[string]any{"success": true, "deleted": false, "wa_account_id": normalizedAccountID, "reason": "already_deleted"}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	status := waAccountStatus(account)
+	if status != waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_PENDING_REGISTRATION {
+		return map[string]any{"success": true, "deleted": false, "wa_account_id": normalizedAccountID, "status": status.String(), "reason": "not_pending_registration"}, nil
+	}
+	resp, err := g.server.DeleteWAAccount(ctx, &waappv1.DeleteWAAccountRequest{Context: reqCtx, WaAccountId: normalizedAccountID})
+	if err != nil {
+		return nil, err
+	}
+	if resp.GetError() != nil {
+		return map[string]any{"success": false, "deleted": false, "wa_account_id": normalizedAccountID, "error": protoMap(resp.GetError()), "error_message": resp.GetError().GetMessage()}, nil
+	}
+	return map[string]any{"success": true, "deleted": resp.GetSuccess(), "wa_account_id": normalizedAccountID}, nil
+}
+
 func (g *actionGateway) persistLoginState(ctx context.Context, payload map[string]any) (map[string]any, error) {
 	registration := objectField(payload, "registration")
 	if nested := objectField(registration, "registration"); len(nested) > 0 {
@@ -501,6 +542,35 @@ func actionProxyURL(payload map[string]any) string {
 		return ""
 	}
 	return firstNonEmpty(textField(state, "_gopay_proxy"), textField(state, "proxy_url"), textField(objectField(state, "proxy"), "proxy_url"))
+}
+
+func cleanupWAAccountID(payload map[string]any) string {
+	registration := objectField(payload, "registration")
+	if nested := objectField(registration, "registration"); len(nested) > 0 {
+		registration = nested
+	}
+	verificationRequest := objectField(payload, "verification_request")
+	data := objectField(payload, "data")
+	return firstNonEmpty(
+		textField(payload, "wa_account_id"),
+		textField(registration, "wa_account_id"),
+		textField(verificationRequest, "wa_account_id"),
+		textField(objectField(payload, "account"), "wa_account_id"),
+		textField(data, "wa_account_id"),
+		textField(objectField(data, "registration"), "wa_account_id"),
+		textField(objectField(data, "verification_request"), "wa_account_id"),
+	)
+}
+
+func cleanupVerificationRequestID(payload map[string]any) string {
+	verificationRequest := objectField(payload, "verification_request")
+	data := objectField(payload, "data")
+	return firstNonEmpty(
+		textField(payload, "verification_request_id"),
+		textField(verificationRequest, "verification_request_id"),
+		textField(data, "verification_request_id"),
+		textField(objectField(data, "verification_request"), "verification_request_id"),
+	)
 }
 
 func (g *actionGateway) nativeEngine() (*NativeEngine, error) {
