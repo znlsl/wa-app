@@ -1,6 +1,21 @@
-import { useState, type ReactNode } from 'react';
+import { useState } from 'react';
 import { RefreshCw, Smartphone, Workflow } from 'lucide-react';
-import { ACCOUNT_PAGE_SIZE, AccountManagementDrawerView, Alert, AlertDescription, AlertTitle, Badge, Button, Card, CardContent, ToastMessage, WorkspaceTabbedPanel, accountId, accountSubject, deleteAccountCarrier, useAccountPages, useAsyncActionRunner, useQuery, useToastMessage, type AccountListPagination, type AccountRecord } from '@byte-v-forge/common-ui';
+import {
+  ACCOUNT_PAGE_SIZE,
+  AccountManagementDrawerView,
+  ToastMessage,
+  WorkflowStatusPanel,
+  WorkspaceTabbedPanel,
+  accountId,
+  accountSubject,
+  deleteAccountCarrier,
+  useAccountPages,
+  useAsyncActionRunner,
+  useQuery,
+  useToastMessage,
+  type AccountListPagination,
+  type AccountRecord,
+} from '@byte-v-forge/common-ui';
 import type { ListWAAccountsResponse } from '../proto/byte/v/forge/waapp/v1/profile';
 import { deleteWaAccount, getWaAccounts, getWaHealth, probeWaAccount, probeWaPhoneSMS, registerWaAccount, waKeys, type WaAccountProjection, type WaWorkflowResponse } from './wa-api';
 import { WaAccountAdd } from './wa-account-add';
@@ -104,9 +119,30 @@ function textOf(value: unknown) {
 }
 
 function WorkflowTab({ configured, workflows, loading }: { configured: boolean; loading?: boolean; workflows: Array<{ key: string; label: string; webhook_path: string }> }) {
-  return <div className="grid gap-4 p-4"><Alert><AlertTitle>{configured ? 'WA n8n 编排已接入' : 'WA n8n webhook 未配置'}</AlertTitle><AlertDescription>{loading ? '加载中...' : '注册流程走 workflow；工具箱号码/SMS 探测、登录态检测、长连接恢复和 OTP MQ 投放由 wa-app 直连服务完成。'}</AlertDescription></Alert><div className="grid gap-3 md:grid-cols-2"><InfoCard icon={<Workflow size={16} />} title="注册流程" badge="n8n" text="跨步骤注册和等待 OTP 仍由 n8n 编排。" /><InfoCard icon={<RefreshCw size={16} />} title="探测 / 登录态 / 长连接" badge="直连" text="号码/SMS 探测使用 1 分钟动态 IP 短租约，用完释放；登录态和长连接不进入 workflow。" /></div><div className="grid gap-2">{workflows.map((item) => <div key={item.key} className="flex items-center justify-between rounded-xl border bg-card p-3 text-sm"><span>{item.label}</span><code className="text-xs text-muted-foreground">{item.webhook_path}</code></div>)}</div><Button variant="outline" asChild><a href="/workflow" target="_blank" rel="noreferrer">打开 Workflow 状态页</a></Button></div>;
-}
-
-function InfoCard({ icon, title, badge, text }: { icon: ReactNode; title: string; badge: string; text: string }) {
-  return <Card><CardContent className="grid gap-2 p-4"><div className="flex items-center justify-between"><div className="flex items-center gap-2 font-medium">{icon}{title}</div><Badge variant="outline">{badge}</Badge></div><p className="text-sm text-muted-foreground">{text}</p></CardContent></Card>;
+  return (
+    <WorkflowStatusPanel
+      configured={configured}
+      loading={loading}
+      configuredTitle="WA n8n 编排已接入"
+      unconfiguredTitle="WA n8n webhook 未配置"
+      description="注册流程走 workflow；工具箱号码/SMS 探测、登录态检测、长连接恢复和 OTP MQ 投放由 wa-app 直连服务完成。"
+      cards={[
+        {
+          id: 'register',
+          icon: <Workflow size={16} />,
+          title: '注册流程',
+          badge: 'n8n',
+          text: '跨步骤注册和等待 OTP 仍由 n8n 编排。',
+        },
+        {
+          id: 'direct',
+          icon: <RefreshCw size={16} />,
+          title: '探测 / 登录态 / 长连接',
+          badge: '直连',
+          text: '号码/SMS 探测使用 1 分钟动态 IP 短租约，用完释放；登录态和长连接不进入 workflow。',
+        },
+      ]}
+      workflows={workflows}
+    />
+  );
 }

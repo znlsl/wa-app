@@ -1,5 +1,3 @@
-export type Tone = 'ok' | 'warn' | 'bad' | 'idle';
-
 export function registeredLabel(value?: boolean, flow?: string) {
   if (value === true) return '已注册';
   if (value === false) return '未注册';
@@ -30,15 +28,6 @@ export function methodStateLabel(available?: boolean, cooldownSeconds?: number |
   if (available === true) return '可用';
   if (available === false) return '不可用';
   return '未知';
-}
-
-export function toneClass(tone: Tone, chip = false) {
-  const base = tone === 'ok' ? 'text-primary' : tone === 'bad' ? 'text-destructive' : tone === 'warn' ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground';
-  if (!chip) return base;
-  if (tone === 'ok') return 'border-primary/30 bg-primary/5 text-primary';
-  if (tone === 'bad') return 'border-destructive/30 bg-destructive/5 text-destructive';
-  if (tone === 'warn') return 'border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-300';
-  return 'bg-muted/30 text-muted-foreground';
 }
 
 export function methodLabels(value: unknown) {

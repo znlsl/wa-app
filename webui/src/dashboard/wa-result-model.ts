@@ -1,6 +1,7 @@
+import type { ResultTone } from '@byte-v-forge/common-ui';
 import type { WaWorkflowResponse } from './wa-api';
-import { methodLabel, methodLabels, type Tone } from './wa-result-labels';
-type ProbeRecord = Record<string, unknown>;
+import { methodLabel, methodLabels } from './wa-result-labels';
+import { compactJoin, extraValues, firstBool, firstNumber, firstText, record, statusIn } from './wa-result-normalize';
 export type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline';
 export type VerificationMethodStatus = { key: string; label: string; available?: boolean; cooldownSeconds: number | null };
 export type WaProbeStatus = {
@@ -23,7 +24,7 @@ export type WaProbeStatus = {
   proxyText: string;
   rejectReason: string;
 };
-export type MetaItem = { label: string; value: string; tone?: Tone };
+export type MetaItem = { label: string; value: string; tone?: ResultTone };
 export function waProbeStatus(result?: WaWorkflowResponse | null): WaProbeStatus {
   const phoneStatus = record(result?.phone_status);
   const accountProbe = record(result?.account_probe);
@@ -150,54 +151,12 @@ function reasonLabel(value: string) {
   if (normalized.includes('too_recent') || normalized.includes('too_many') || normalized.includes('temporarily_unavailable')) return '限流';
   return value.trim();
 }
-function addItem(entries: MetaItem[], label: string, value?: string, tone: Tone = 'idle') {
+function addItem(entries: MetaItem[], label: string, value?: string, tone: ResultTone = 'idle') {
   const text = value?.trim();
   if (text) entries.push({ label, value: text, tone });
 }
-function record(value: unknown): ProbeRecord {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as ProbeRecord : {};
-}
-function firstBool(...values: unknown[]) {
-  for (const value of values) {
-    if (typeof value === 'boolean') return value;
-    if (typeof value === 'string') {
-      if (/^(true|yes|1)$/i.test(value)) return true;
-      if (/^(false|no|0)$/i.test(value)) return false;
-    }
-  }
-  return undefined;
-}
-function firstNumber(...values: unknown[]) {
-  for (const value of values) {
-    if (value === undefined || value === null || value === '') continue;
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return null;
-}
-function firstText(...values: unknown[]) {
-  for (const value of values) {
-    if (typeof value === 'string' && value.trim()) return value.trim();
-  }
-  return '';
-}
-function statusIn(expected: string[], ...values: unknown[]) {
-  const set = new Set(expected.map((value) => value.toLowerCase()));
-  let sawValue = false;
-  for (const value of values) {
-    const normalized = firstText(value).toLowerCase();
-    if (!normalized) continue;
-    sawValue = true;
-    if (set.has(normalized)) return true;
-  }
-  return sawValue ? false : undefined;
-}
-
 function registeredSignal(...values: unknown[]) {
   return statusIn(['registered', 'exists', 'account_exists'], ...values) ? true : undefined;
-}
-function compactJoin(values: string[], separator: string) {
-  return values.map((value) => value.trim()).filter(Boolean).join(separator);
 }
 
 function deriveAccountFlow(input: { registered?: boolean; blocked?: boolean; smsAvailable?: boolean; accountStatus: string; rawReason: string }) {
@@ -208,14 +167,4 @@ function deriveAccountFlow(input: { registered?: boolean; blocked?: boolean; sms
   if (raw.includes('too_recent') || raw.includes('too_many') || raw.includes('temporarily_unavailable')) return 'rate_limited';
   if (raw.includes('incorrect')) return 'probe_failed';
   return 'unknown';
-}
-function extraValues(primary: string, ...values: string[]) {
-  const normalizedPrimary = primary.trim().toLowerCase();
-  const seen = new Set<string>();
-  return values.map((value) => value.trim()).filter((value) => {
-    const normalized = value.toLowerCase();
-    if (!value || normalized === normalizedPrimary || seen.has(normalized)) return false;
-    seen.add(normalized);
-    return true;
-  });
 }
