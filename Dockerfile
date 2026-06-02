@@ -16,7 +16,7 @@ FROM docker.m.daocloud.io/library/golang:1.26-alpine AS builder
 WORKDIR /app
 ENV GOPROXY=https://goproxy.cn,direct
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories \
-    && apk add --no-cache git ca-certificates protobuf
+    && apk add --no-cache git ca-certificates protobuf-dev
 
 COPY common-lib /common-lib
 COPY wa-app/go.mod wa-app/go.sum ./
