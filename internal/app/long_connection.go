@@ -19,9 +19,16 @@ const (
 	longConnectionMaxBackoff           = 30 * time.Second
 	longConnectionLeaseTTL             = 90 * time.Second
 	longConnectionLeaseRenewInterval   = 30 * time.Second
+	longConnectionLeaseWaitLogInterval = 20
 	longConnectionDecryptLimit         = 100
 	staleMessageSessionTTL             = 10 * time.Minute
 	staleMessageSessionCleanupInterval = 5 * time.Minute
+)
+
+const (
+	longConnectionLeaseUnavailableMessage = "WA long connection lease is held by another worker"
+	longConnectionLeaseLostMessage        = "WA long connection lease was lost"
+	longConnectionLeaseOperationMessage   = "WA long connection lease operation failed"
 )
 
 type LongConnectionManager struct {
@@ -336,7 +343,7 @@ func (m *LongConnectionManager) startLongConnectionLeaseRenewal(ctx context.Cont
 					if connectionCtx.Err() != nil {
 						return
 					}
-					sendLongConnectionLeaseLoss(leaseLost, longConnectionLeaseUnavailableError())
+					sendLongConnectionLeaseLoss(leaseLost, longConnectionLeaseLostError())
 					cancel()
 					return
 				}
@@ -372,11 +379,15 @@ func readLongConnectionLeaseLoss(ch <-chan error) error {
 }
 
 func longConnectionLeaseUnavailableError() error {
-	return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, "WA long connection lease is held by another worker", true)
+	return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, longConnectionLeaseUnavailableMessage, true)
+}
+
+func longConnectionLeaseLostError() error {
+	return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, longConnectionLeaseLostMessage, true)
 }
 
 func longConnectionLeaseOperationError() error {
-	return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, "WA long connection lease operation failed", true)
+	return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, longConnectionLeaseOperationMessage, true)
 }
 
 func closeLongConnectionRunner(runner ProtocolEngine) {
@@ -430,15 +441,28 @@ func (m *LongConnectionManager) decryptReceivedMessages(ctx context.Context, ses
 }
 
 func (m *LongConnectionManager) recordLoopError(key string, reconnects int32, err error) {
+	protoErr := ToProtoError(err)
 	m.update(key, func(snapshot *waappv1.LongConnectionState) {
 		snapshot.Status = waappv1.LongConnectionStatus_LONG_CONNECTION_STATUS_RECONNECTING
 		snapshot.ReconnectCount = reconnects
-		snapshot.LastError = ToProtoError(err)
+		snapshot.LastError = protoErr
 	})
+	if isLongConnectionLeaseUnavailable(protoErr) {
+		if reconnects == 0 || reconnects%longConnectionLeaseWaitLogInterval == 0 {
+			log.Printf("WA long connection lease waiting count=%d", reconnects)
+		}
+		return
+	}
 	if reconnects < 5 || reconnects%20 == 0 {
-		protoErr := ToProtoError(err)
 		log.Printf("WA long connection reconnecting count=%d code=%s retryable=%t message=%s", reconnects, protoErr.GetCode().String(), protoErr.GetRetryable(), longConnectionLogErrorMessage(protoErr.GetMessage()))
 	}
+}
+
+func isLongConnectionLeaseUnavailable(err *waappv1.WaError) bool {
+	if err == nil {
+		return false
+	}
+	return err.GetCode() == waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT && err.GetMessage() == longConnectionLeaseUnavailableMessage
 }
 
 func longConnectionLogErrorMessage(message string) string {
