@@ -16,6 +16,7 @@ import (
 const (
 	defaultContactProfilePictureTimeout = 20 * time.Second
 	profilePictureDirectPathHost        = "https://pps.whatsapp.net"
+	profilePictureMediaDirectPathHost   = "https://mmg.whatsapp.net"
 	profilePictureDownloadMaxBytes      = 2 << 20
 )
 
@@ -161,25 +162,27 @@ func contactProfilePictureLocationFromPicture(picture chatdNode) (contactProfile
 }
 
 func (c *nativeHTTPClient) getProfilePicture(ctx context.Context, location contactProfilePictureLocation, userAgent string) ([]byte, string, error) {
-	endpoint, err := profilePictureDownloadURL(location)
-	if err != nil {
-		return nil, "", err
-	}
+	endpoints := profilePictureDownloadURLs(location)
 	var lastErr error
-	for attempt := 0; attempt < 2; attempt++ {
-		if attempt > 0 {
-			if err := sleepWithContext(ctx, 250*time.Millisecond); err != nil {
-				return nil, "", err
+	for _, endpoint := range endpoints {
+		for attempt := 0; attempt < 2; attempt++ {
+			if attempt > 0 {
+				if err := sleepWithContext(ctx, 250*time.Millisecond); err != nil {
+					return nil, "", err
+				}
+			}
+			data, contentType, err := c.getProfilePictureOnce(ctx, endpoint, userAgent)
+			if err == nil {
+				return data, contentType, nil
+			}
+			lastErr = err
+			if !profilePictureDownloadRetryable(err) {
+				break
 			}
 		}
-		data, contentType, err := c.getProfilePictureOnce(ctx, endpoint, userAgent)
-		if err == nil {
-			return data, contentType, nil
-		}
-		lastErr = err
-		if !profilePictureDownloadRetryable(err) {
-			break
-		}
+	}
+	if lastErr == nil {
+		lastErr = NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture not found", false)
 	}
 	return nil, "", lastErr
 }
@@ -212,14 +215,29 @@ func (c *nativeHTTPClient) getProfilePictureOnce(ctx context.Context, endpoint s
 	return data, contentType, nil
 }
 
-func profilePictureDownloadURL(location contactProfilePictureLocation) (string, error) {
-	for _, candidate := range []string{location.URL, location.DirectPath} {
-		endpoint, ok := normalizeProfilePictureURL(candidate)
-		if ok {
-			return endpoint, nil
+func profilePictureDownloadURLs(location contactProfilePictureLocation) []string {
+	out := []string{}
+	seen := map[string]struct{}{}
+	appendEndpoint := func(endpoint string) {
+		if endpoint == "" {
+			return
 		}
+		if _, ok := seen[endpoint]; ok {
+			return
+		}
+		seen[endpoint] = struct{}{}
+		out = append(out, endpoint)
 	}
-	return "", NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture not found", false)
+	if endpoint, ok := normalizeProfilePictureURL(location.URL); ok {
+		appendEndpoint(endpoint)
+	}
+	if endpoint, ok := normalizeProfilePictureURL(location.DirectPath); ok {
+		appendEndpoint(endpoint)
+	}
+	if strings.HasPrefix(strings.TrimSpace(location.DirectPath), "/") {
+		appendEndpoint(profilePictureMediaDirectPathHost + strings.TrimSpace(location.DirectPath))
+	}
+	return out
 }
 
 func normalizeProfilePictureURL(value string) (string, bool) {
