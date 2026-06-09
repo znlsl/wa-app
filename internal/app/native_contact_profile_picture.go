@@ -64,33 +64,44 @@ func (e *NativeEngine) resolveContactProfilePicture(ctx context.Context, input E
 	cfg := chatdConfigForState(proxyURL, state, timeout)
 	cfg.MaxEndpoints = 1
 	client := newChatdClient(cfg)
-	location, update, err := e.contactProfilePictureLocationFromProfileIQ(operationCtx, client, state, input, jid)
+	locations, update, err := e.contactProfilePictureLocationsFromProfileIQ(operationCtx, client, state, input, jid)
 	if applyChatdSessionUpdateState(&state, update) {
 		_ = e.saveState(ctx, input.ClientProfileID, state)
 	}
+	if err != nil && len(locations) == 0 {
+		return EngineContactProfilePictureResult{Err: err}
+	}
+	var lastErr error
+	for _, location := range locations {
+		if !contactProfilePictureLocationDownloadable(location) {
+			lastErr = NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture not found", false)
+			continue
+		}
+		if len(location.InlineData) > 0 {
+			contentType, err := profilePictureContentType(location.InlineData, "")
+			return EngineContactProfilePictureResult{ProfilePictureID: location.ID, ContentType: contentType, Data: location.InlineData, Err: err}
+		}
+		data, contentType, downloadErr := e.downloadContactProfilePicture(operationCtx, location, state.UserAgent)
+		if downloadErr == nil {
+			return EngineContactProfilePictureResult{ProfilePictureID: location.ID, ContentType: contentType, Data: data}
+		}
+		lastErr = downloadErr
+	}
+	if lastErr != nil {
+		return EngineContactProfilePictureResult{Err: lastErr}
+	}
 	if err != nil {
 		return EngineContactProfilePictureResult{Err: err}
 	}
-	if !contactProfilePictureLocationDownloadable(location) {
-		return EngineContactProfilePictureResult{Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture not found", false)}
-	}
-	if len(location.InlineData) > 0 {
-		contentType, err := profilePictureContentType(location.InlineData, "")
-		return EngineContactProfilePictureResult{ProfilePictureID: location.ID, ContentType: contentType, Data: location.InlineData, Err: err}
-	}
-	httpClient, err := e.httpForProxy()
-	if err != nil {
-		return EngineContactProfilePictureResult{Err: err}
-	}
-	data, contentType, err := httpClient.getProfilePicture(operationCtx, location, state.UserAgent)
-	return EngineContactProfilePictureResult{ProfilePictureID: location.ID, ContentType: contentType, Data: data, Err: err}
+	return EngineContactProfilePictureResult{Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture not found", false)}
 }
 
-func (e *NativeEngine) contactProfilePictureLocationFromProfileIQ(ctx context.Context, client *chatdClient, state nativeState, input EngineContactProfilePictureInput, jid string) (contactProfilePictureLocation, chatdSessionUpdate, error) {
+func (e *NativeEngine) contactProfilePictureLocationsFromProfileIQ(ctx context.Context, client *chatdClient, state nativeState, input EngineContactProfilePictureInput, jid string) ([]contactProfilePictureLocation, chatdSessionUpdate, error) {
 	target := contactProfilePictureTarget(jid, input.ContactPNJID)
 	if target == "" {
-		return contactProfilePictureLocation{}, chatdSessionUpdate{}, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "WA contact profile picture target is incomplete", false)
+		return nil, chatdSessionUpdate{}, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "WA contact profile picture target is incomplete", false)
 	}
+	locations := []contactProfilePictureLocation{}
 	var lastUpdate chatdSessionUpdate
 	var lastErr error
 	for _, pictureType := range contactProfilePictureQueryTypes {
@@ -101,7 +112,7 @@ func (e *NativeEngine) contactProfilePictureLocationFromProfileIQ(ctx context.Co
 		applyChatdSessionUpdateState(&state, update)
 		if err != nil {
 			if !contactProfilePictureNotFound(err) {
-				return contactProfilePictureLocation{}, lastUpdate, err
+				return locations, lastUpdate, err
 			}
 			lastErr = err
 			continue
@@ -109,7 +120,7 @@ func (e *NativeEngine) contactProfilePictureLocationFromProfileIQ(ctx context.Co
 		location, err := contactProfilePictureLocationFromIQ(response)
 		if err != nil {
 			if !contactProfilePictureNotFound(err) {
-				return contactProfilePictureLocation{}, lastUpdate, err
+				return locations, lastUpdate, err
 			}
 			lastErr = err
 			continue
@@ -118,12 +129,18 @@ func (e *NativeEngine) contactProfilePictureLocationFromProfileIQ(ctx context.Co
 			lastErr = NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture download location not found", false)
 			continue
 		}
-		return location, lastUpdate, nil
+		locations = append(locations, location)
+		if len(location.InlineData) > 0 {
+			return locations, lastUpdate, nil
+		}
+	}
+	if len(locations) > 0 {
+		return locations, lastUpdate, nil
 	}
 	if lastErr == nil {
 		lastErr = NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture not found", false)
 	}
-	return contactProfilePictureLocation{}, lastUpdate, lastErr
+	return nil, lastUpdate, lastErr
 }
 
 func mergeContactProfilePictureUpdate(current chatdSessionUpdate, next chatdSessionUpdate) chatdSessionUpdate {
@@ -174,6 +191,30 @@ func buildContactProfilePictureIQ(id string, jid string, pictureType string, pic
 		Attrs:   map[string]string{"xmlns": "w:profile:picture", "id": id, "to": "s.whatsapp.net", "type": "get", "target": normalizeWAJID(jid)},
 		Content: []chatdNode{picture},
 	}
+}
+
+func (e *NativeEngine) downloadContactProfilePicture(ctx context.Context, location contactProfilePictureLocation, userAgent string) ([]byte, string, error) {
+	httpClient, err := e.httpForProxy()
+	if err != nil {
+		return nil, "", err
+	}
+	data, contentType, err := httpClient.getProfilePicture(ctx, location, userAgent)
+	if err == nil {
+		return data, contentType, nil
+	}
+	if strings.TrimSpace(e.activeProxyURL) == "" || !profilePictureDownloadRetryable(err) {
+		return nil, "", err
+	}
+	directClient, directErr := newNativeHTTPClient("")
+	if directErr != nil {
+		return nil, "", err
+	}
+	defer directClient.CloseIdleConnections()
+	data, contentType, directErr = directClient.getProfilePicture(ctx, location, userAgent)
+	if directErr == nil {
+		return data, contentType, nil
+	}
+	return nil, "", err
 }
 
 func contactProfilePictureNotFound(err error) bool {
@@ -253,7 +294,7 @@ func (c *nativeHTTPClient) getProfilePicture(ctx context.Context, location conta
 	endpoints := profilePictureDownloadURLs(location)
 	var lastErr error
 	for _, endpoint := range endpoints {
-		for attempt := 0; attempt < 2; attempt++ {
+		for attempt := 0; attempt < 3; attempt++ {
 			if attempt > 0 {
 				if err := sleepWithContext(ctx, 250*time.Millisecond); err != nil {
 					return nil, "", err
