@@ -52,7 +52,9 @@ func (e *NativeEngine) ResolveContacts(ctx context.Context, input EngineContactR
 		var batchContacts []*waappv1.WAContact
 		var lastErr error
 		hadSuccess := false
+		hadPictureQuery := false
 		for _, variant := range contactUsyncVariants() {
+			hadPictureQuery = hadPictureQuery || contactUsyncVariantIncludesPicture(variant)
 			request := buildContactUsyncIQ(e.ids.NewID("waiq_"), e.ids.NewID("sync_sid_query_"), contactUsyncRefsFromJIDs(batch), variant)
 			response, update, err := client.sendIQ(ctx, state, input.RegisteredIdentityID, defaultWAAppVersion, request, "contact usync iq timed out")
 			if applyChatdConnectionState(&state, update) {
@@ -66,7 +68,7 @@ func (e *NativeEngine) ResolveContacts(ctx context.Context, input EngineContactR
 			logContactUsyncShape(variant.Name, response)
 			contacts := contactsFromContactUsyncIQ(input.WAAccountID, response, e.clock.Now(), batch)
 			batchContacts = append(batchContacts, contacts...)
-			if contactUsyncDisplayIdentityCount(dedupeWAContacts(batchContacts)) >= len(batch) {
+			if hadPictureQuery && contactUsyncDisplayIdentityCount(dedupeWAContacts(batchContacts)) >= len(batch) {
 				break
 			}
 		}
@@ -207,7 +209,7 @@ func contactUsyncVariants() []contactUsyncVariant {
 				{Tag: "contact"},
 				{Tag: "sidelist"},
 				{Tag: "status"},
-				{Tag: "picture", Attrs: map[string]string{"type": "preview"}},
+				buildContactUsyncPictureQuery(),
 				buildContactUsyncBusinessQuery(),
 				{Tag: "devices", Attrs: map[string]string{"version": "2"}},
 				{Tag: "disappearing_mode"},
@@ -230,6 +232,7 @@ func contactUsyncVariants() []contactUsyncVariant {
 				{Tag: "username"},
 				{Tag: "contact"},
 				{Tag: "lid"},
+				buildContactUsyncPictureQuery(),
 				buildContactUsyncBusinessQuery(),
 			},
 		},
@@ -242,6 +245,7 @@ func contactUsyncVariants() []contactUsyncVariant {
 				{Tag: "contact", Attrs: map[string]string{"addressing_mode": "lid"}},
 				{Tag: "lid"},
 				{Tag: "username"},
+				buildContactUsyncPictureQuery(),
 				buildContactUsyncBusinessQuery(),
 			},
 		},
@@ -254,6 +258,7 @@ func contactUsyncVariants() []contactUsyncVariant {
 				{Tag: "contact", Attrs: map[string]string{"addressing_mode": "lid"}},
 				{Tag: "lid"},
 				{Tag: "username"},
+				buildContactUsyncPictureQuery(),
 				buildContactUsyncBusinessQuery(),
 			},
 		},
@@ -304,6 +309,19 @@ func buildContactUsyncBusinessQuery() chatdNode {
 			{Tag: "profile", Attrs: map[string]string{"v": "1"}},
 		},
 	}
+}
+
+func buildContactUsyncPictureQuery() chatdNode {
+	return chatdNode{Tag: "picture", Attrs: map[string]string{"type": "preview"}}
+}
+
+func contactUsyncVariantIncludesPicture(variant contactUsyncVariant) bool {
+	for _, node := range variant.Query {
+		if _, ok := findChatdNode(node, "picture"); ok {
+			return true
+		}
+	}
+	return false
 }
 
 func contactUsyncRefsFromJIDs(jids []string) []contactUsyncRef {
@@ -434,6 +452,7 @@ func contactFromContactUsyncUser(accountID string, userNode chatdNode, now time.
 	contact.DisplayName = firstNonEmpty(displayName, verifiedName, waName, fallbackWAContactDisplayName(contact.GetKind(), contact.GetJid(), contact.GetNumber()))
 	contact.WaName = waName
 	contact.VerifiedName = verifiedName
+	contact.ProfilePictureId = contactProfilePictureID(userNode)
 	if business || verifiedName != "" {
 		contact.Kind = waappv1.WAContactKind_WA_CONTACT_KIND_BUSINESS
 	}
@@ -763,6 +782,7 @@ func contactFromBusinessNode(accountID string, node chatdNode, now time.Time, re
 	contact.DisplayName = displayName
 	contact.WaName = displayName
 	contact.VerifiedName = verifiedName
+	contact.ProfilePictureId = contactProfilePictureID(node)
 	contact.Kind = waappv1.WAContactKind_WA_CONTACT_KIND_BUSINESS
 	return contact
 }
@@ -793,6 +813,14 @@ func contactUsyncPhoneNumber(node chatdNode) string {
 		}
 	}
 	return ""
+}
+
+func contactProfilePictureID(node chatdNode) string {
+	pictureNode, ok := findChatdNode(node, "picture")
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(firstNonEmpty(pictureNode.Attrs["id"], pictureNode.Attrs["photo_id"], pictureNode.Attrs["picture_id"]))
 }
 
 func normalizeContactUsyncJIDs(values []string) []string {
@@ -845,6 +873,7 @@ func dedupeWAContacts(contacts []*waappv1.WAContact) []*waappv1.WAContact {
 		current.DisplayName = betterWAContactDisplayName(current, contact.GetDisplayName())
 		current.WaName = firstNonEmpty(current.GetWaName(), contact.GetWaName())
 		current.VerifiedName = firstNonEmpty(current.GetVerifiedName(), contact.GetVerifiedName())
+		current.ProfilePictureId = firstNonEmpty(current.GetProfilePictureId(), contact.GetProfilePictureId())
 		if current.GetKind() == waappv1.WAContactKind_WA_CONTACT_KIND_USER && contact.GetKind() != waappv1.WAContactKind_WA_CONTACT_KIND_UNSPECIFIED {
 			current.Kind = contact.GetKind()
 		}

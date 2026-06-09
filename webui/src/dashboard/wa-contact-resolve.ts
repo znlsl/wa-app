@@ -39,5 +39,5 @@ function unresolvedContactJIDs(records: WAContactRecord[]) {
 
 function needsResolve(record: WAContactRecord) {
   const name = (record.display_name || '').trim();
-  return !record.number || !name || name === '未知联系人' || name.startsWith('LID ') || name.startsWith('联系人 ');
+  return !record.profile_picture_id || !record.number || !name || name === '未知联系人' || name.startsWith('LID ') || name.startsWith('联系人 ');
 }

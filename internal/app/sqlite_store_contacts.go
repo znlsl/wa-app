@@ -41,6 +41,15 @@ ON CONFLICT(id) DO UPDATE SET
 	return tx.Commit()
 }
 
+func (s *SQLiteStore) GetWAContact(ctx context.Context, contactID string) (*waappv1.WAContact, error) {
+	contact := &waappv1.WAContact{}
+	if err := s.loadPayload(ctx, "wa_sqlite_contacts", contactID, contact, waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA contact not found"); err != nil {
+		return nil, err
+	}
+	enrichWAContactFallback(contact)
+	return contact, nil
+}
+
 func (s *SQLiteStore) ListWAContacts(ctx context.Context, waAccountIDValue string, cursorValue string, limit int) ([]*waappv1.WAContact, string, error) {
 	cursor, err := decodeKeysetCursor(cursorValue)
 	if err != nil {

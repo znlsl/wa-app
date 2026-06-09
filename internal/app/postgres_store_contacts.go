@@ -19,8 +19,8 @@ func (s *PostgresStore) SaveWAContacts(ctx context.Context, contacts []*waappv1.
 		}
 		createdAt := timeFromProto(contact.GetAudit().GetCreatedAt())
 		updatedAt := timeFromProto(contact.GetAudit().GetUpdatedAt())
-		batch.Queue(`INSERT INTO wa_contacts (contact_id, wa_account_id, jid, number, display_name, wa_name, verified_name, kind, is_whatsapp_user, is_reachable, created_at, updated_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+		batch.Queue(`INSERT INTO wa_contacts (contact_id, wa_account_id, jid, number, display_name, wa_name, verified_name, profile_picture_id, kind, is_whatsapp_user, is_reachable, created_at, updated_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 ON CONFLICT (contact_id) DO UPDATE SET
   jid=EXCLUDED.jid,
   number=COALESCE(NULLIF(EXCLUDED.number,''), wa_contacts.number),
@@ -32,10 +32,11 @@ ON CONFLICT (contact_id) DO UPDATE SET
   END,
   wa_name=COALESCE(NULLIF(EXCLUDED.wa_name,''), wa_contacts.wa_name),
   verified_name=COALESCE(NULLIF(EXCLUDED.verified_name,''), wa_contacts.verified_name),
+  profile_picture_id=COALESCE(NULLIF(EXCLUDED.profile_picture_id,''), wa_contacts.profile_picture_id),
   kind=CASE WHEN EXCLUDED.kind IN ('WA_CONTACT_KIND_UNSPECIFIED','WA_CONTACT_KIND_USER') AND wa_contacts.kind <> '' THEN wa_contacts.kind ELSE EXCLUDED.kind END,
   is_whatsapp_user=wa_contacts.is_whatsapp_user OR EXCLUDED.is_whatsapp_user,
   is_reachable=wa_contacts.is_reachable OR EXCLUDED.is_reachable,
-  updated_at=GREATEST(wa_contacts.updated_at, EXCLUDED.updated_at)`, contact.GetContactId(), contact.GetWaAccountId(), contact.GetJid(), contact.GetNumber(), contact.GetDisplayName(), contact.GetWaName(), contact.GetVerifiedName(), contactKindStorageValue(contact), contact.GetIsWhatsappUser(), contact.GetIsReachable(), createdAt, updatedAt)
+  updated_at=GREATEST(wa_contacts.updated_at, EXCLUDED.updated_at)`, contact.GetContactId(), contact.GetWaAccountId(), contact.GetJid(), contact.GetNumber(), contact.GetDisplayName(), contact.GetWaName(), contact.GetVerifiedName(), contact.GetProfilePictureId(), contactKindStorageValue(contact), contact.GetIsWhatsappUser(), contact.GetIsReachable(), createdAt, updatedAt)
 		queued++
 	}
 	if queued == 0 {
@@ -43,6 +44,15 @@ ON CONFLICT (contact_id) DO UPDATE SET
 	}
 	br := s.pool.SendBatch(ctx, batch)
 	return br.Close()
+}
+
+func (s *PostgresStore) GetWAContact(ctx context.Context, contactID string) (*waappv1.WAContact, error) {
+	var r contactRow
+	row := s.pool.QueryRow(ctx, contactSelectSQL+` WHERE contact_id=$1`, contactID)
+	if err := scanContactRow(row, &r); err != nil {
+		return nil, notFound(err, waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA contact not found")
+	}
+	return r.toProto(), nil
 }
 
 func (s *PostgresStore) ListWAContacts(ctx context.Context, waAccountIDValue string, cursorValue string, limit int) ([]*waappv1.WAContact, string, error) {
@@ -59,7 +69,7 @@ func (s *PostgresStore) ListWAContacts(ctx context.Context, waAccountIDValue str
 	items := []*waappv1.WAContact{}
 	for rows.Next() {
 		var r contactRow
-		if err := rows.Scan(&r.id, &r.waAccountIDValue, &r.jid, &r.number, &r.displayName, &r.waName, &r.verifiedName, &r.kind, &r.isWhatsAppUser, &r.isReachable, &r.createdAt, &r.updatedAt); err != nil {
+		if err := scanContactRow(rows, &r); err != nil {
 			return nil, "", err
 		}
 		items = append(items, r.toProto())
@@ -74,9 +84,18 @@ func (s *PostgresStore) ListWAContacts(ctx context.Context, waAccountIDValue str
 }
 
 func (s *PostgresStore) queryContactPage(ctx context.Context, waAccountIDValue string, cursor keysetCursor, limit int) (pgx.Rows, error) {
-	const base = `SELECT contact_id,wa_account_id,jid,number,display_name,wa_name,verified_name,kind,is_whatsapp_user,is_reachable,created_at,updated_at FROM wa_contacts WHERE wa_account_id=$1`
 	if !hasKeysetCursor(cursor) {
-		return s.pool.Query(ctx, base+` ORDER BY updated_at DESC, contact_id DESC LIMIT $2`, waAccountIDValue, limit)
+		return s.pool.Query(ctx, contactSelectSQL+` WHERE wa_account_id=$1 ORDER BY updated_at DESC, contact_id DESC LIMIT $2`, waAccountIDValue, limit)
 	}
-	return s.pool.Query(ctx, base+` AND (updated_at, contact_id) < ($2, $3) ORDER BY updated_at DESC, contact_id DESC LIMIT $4`, waAccountIDValue, cursor.UpdatedAt, cursor.ID, limit)
+	return s.pool.Query(ctx, contactSelectSQL+` WHERE wa_account_id=$1 AND (updated_at, contact_id) < ($2, $3) ORDER BY updated_at DESC, contact_id DESC LIMIT $4`, waAccountIDValue, cursor.UpdatedAt, cursor.ID, limit)
+}
+
+const contactSelectSQL = `SELECT contact_id,wa_account_id,jid,number,display_name,wa_name,verified_name,profile_picture_id,kind,is_whatsapp_user,is_reachable,created_at,updated_at FROM wa_contacts`
+
+type contactScanner interface {
+	Scan(...any) error
+}
+
+func scanContactRow(scanner contactScanner, r *contactRow) error {
+	return scanner.Scan(&r.id, &r.waAccountIDValue, &r.jid, &r.number, &r.displayName, &r.waName, &r.verifiedName, &r.profilePictureID, &r.kind, &r.isWhatsAppUser, &r.isReachable, &r.createdAt, &r.updatedAt)
 }

@@ -50,6 +50,7 @@ type Store interface {
 	SaveOTPMessage(context.Context, *waappv1.OtpMessage) error
 	ListAccountOTPMessages(context.Context, string, string, int, bool) ([]*waappv1.OtpMessage, string, error)
 	SaveWAContacts(context.Context, []*waappv1.WAContact) error
+	GetWAContact(context.Context, string) (*waappv1.WAContact, error)
 	ListWAContacts(context.Context, string, string, int) ([]*waappv1.WAContact, string, error)
 }
 
@@ -156,6 +157,14 @@ type EngineContactResolveInput struct {
 	RemoteTimeout        time.Duration
 }
 
+type EngineContactProfilePictureInput struct {
+	WAAccountID          string
+	ClientProfileID      string
+	RegisteredIdentityID string
+	ContactJID           string
+	RemoteTimeout        time.Duration
+}
+
 type EngineProbeResult struct {
 	Status           waappv1.AccountProbeStatus
 	AccountFlow      string
@@ -233,4 +242,11 @@ type EngineContactResolveResult struct {
 	Queried  int
 	Resolved int
 	Err      error
+}
+
+type EngineContactProfilePictureResult struct {
+	ProfilePictureID string
+	ContentType      string
+	Data             []byte
+	Err              error
 }

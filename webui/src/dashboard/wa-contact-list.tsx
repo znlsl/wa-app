@@ -33,7 +33,7 @@ export function WaContactList({ accountID, contacts, selectedID, loading, error 
 function ContactLink({ accountID, contact, selected }: { accountID: string; contact: WaContact; selected: boolean }) {
   return (
     <NavLink className={({ isActive }) => `mb-1 grid w-full grid-cols-[42px_1fr_auto] items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition hover:bg-muted/60 ${selected || isActive ? 'bg-primary/10' : ''}`} to={waContactPath(accountID, contact.id)}>
-      <span className="grid size-10 place-items-center rounded-full bg-emerald-50"><WhatsAppIcon className="size-6" title={contact.title} /></span>
+      <ContactAvatar contact={contact} />
       <span className="min-w-0">
         <span className="flex min-w-0 items-center gap-2">
           <span className="truncate text-sm font-medium">{contact.title}</span>
@@ -47,6 +47,14 @@ function ContactLink({ accountID, contact, selected }: { accountID: string; cont
       </span>
     </NavLink>
   );
+}
+
+function ContactAvatar({ contact }: { contact: WaContact }) {
+  const [failedURL, setFailedURL] = useState('');
+  if (contact.profilePictureURL && failedURL !== contact.profilePictureURL) {
+    return <img className="size-10 rounded-full border border-border object-cover" src={contact.profilePictureURL} alt={contact.title} loading="lazy" onError={() => setFailedURL(contact.profilePictureURL || '')} />;
+  }
+  return <span className="grid size-10 place-items-center rounded-full bg-emerald-50"><WhatsAppIcon className="size-6" title={contact.title} /></span>;
 }
 
 function ContactKindBadge({ kind }: { kind: WAContactKind }) {

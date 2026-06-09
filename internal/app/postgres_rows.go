@@ -396,6 +396,7 @@ type contactRow struct {
 	displayName      string
 	waName           string
 	verifiedName     string
+	profilePictureID string
 	kind             string
 	isWhatsAppUser   bool
 	isReachable      bool
@@ -407,16 +408,17 @@ func (r contactRow) toProto() *waappv1.WAContact {
 	kind := waappv1.WAContactKind(waappv1.WAContactKind_value[r.kind])
 	displayName := firstNonEmpty(storedWAContactDisplayName(r.displayName, kind, r.jid, r.number), fallbackWAContactDisplayName(kind, r.jid, r.number))
 	return &waappv1.WAContact{
-		ContactId:      r.id,
-		WaAccountId:    r.waAccountIDValue,
-		Jid:            r.jid,
-		Number:         r.number,
-		DisplayName:    displayName,
-		WaName:         r.waName,
-		VerifiedName:   r.verifiedName,
-		Kind:           kind,
-		IsWhatsappUser: r.isWhatsAppUser,
-		IsReachable:    r.isReachable,
-		Audit:          audit(r.createdAt, r.updatedAt),
+		ContactId:        r.id,
+		WaAccountId:      r.waAccountIDValue,
+		Jid:              r.jid,
+		Number:           r.number,
+		DisplayName:      displayName,
+		WaName:           r.waName,
+		VerifiedName:     r.verifiedName,
+		ProfilePictureId: r.profilePictureID,
+		Kind:             kind,
+		IsWhatsappUser:   r.isWhatsAppUser,
+		IsReachable:      r.isReachable,
+		Audit:            audit(r.createdAt, r.updatedAt),
 	}
 }

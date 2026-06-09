@@ -56,6 +56,7 @@ func runDashboardHTTP(ctx context.Context, listenAddr, staticDir string, service
 	mux.HandleFunc("/api/wa/account-otp-messages", server.handleAccountOTPMessages)
 	mux.HandleFunc("/api/wa/messages", server.handleMessages)
 	mux.HandleFunc("/api/wa/contacts/resolve", server.handleResolveContacts)
+	mux.HandleFunc("/api/wa/contacts/", server.handleContactResource)
 	mux.HandleFunc("/api/wa/contacts", server.handleContacts)
 	mux.HandleFunc("/api/wa/long-connections", server.handleLongConnections)
 	mux.Handle("/api/wa/actions/", server.actionHandler)
@@ -290,6 +291,78 @@ func (s *dashboardHTTP) handleContacts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeProtoJSON(w, http.StatusOK, resp)
+}
+
+func (s *dashboardHTTP) handleContactResource(w http.ResponseWriter, r *http.Request) {
+	if strings.HasSuffix(r.URL.Path, "/profile-picture") {
+		s.handleContactProfilePicture(w, r)
+		return
+	}
+	http.NotFound(w, r)
+}
+
+func (s *dashboardHTTP) handleContactProfilePicture(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if s.service == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "wa-app service is not configured"})
+		return
+	}
+	contactID, ok := contactIDFromProfilePicturePath(r.URL.Path)
+	if !ok {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "contact id is required"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	picture, err := s.service.GetWAContactProfilePicture(ctx, contactID)
+	if err != nil {
+		if app.IsWAContactProfilePictureNotFound(err) {
+			http.NotFound(w, r)
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "load WA contact profile picture failed"})
+		return
+	}
+	w.Header().Set("Content-Type", picture.ContentType)
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	if etag := safeHTTPETag(picture.ProfilePictureID); etag != "" {
+		w.Header().Set("ETag", etag)
+	}
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(picture.Data)
+}
+
+func contactIDFromProfilePicturePath(path string) (string, bool) {
+	value := strings.TrimSuffix(strings.TrimPrefix(path, "/api/wa/contacts/"), "/profile-picture")
+	value = strings.Trim(value, "/")
+	if value == "" || strings.Contains(value, "/") {
+		return "", false
+	}
+	contactID, err := url.PathUnescape(value)
+	if err != nil || strings.TrimSpace(contactID) == "" {
+		return "", false
+	}
+	return contactID, true
+}
+
+func safeHTTPETag(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	var b strings.Builder
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' || r == '.' || r == ':' {
+			b.WriteRune(r)
+		}
+	}
+	if b.Len() == 0 {
+		return ""
+	}
+	return `"` + b.String() + `"`
 }
 
 func (s *dashboardHTTP) handleResolveContacts(w http.ResponseWriter, r *http.Request) {

@@ -37,6 +37,7 @@ message WAContact {
   bool is_whatsapp_user = 9;
   bool is_reachable = 10;
   AuditStamp audit = 11;
+  string profile_picture_id = 12;
 }
 
 message ListWAContactsRequest {

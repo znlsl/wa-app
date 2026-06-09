@@ -197,6 +197,7 @@ CREATE TABLE IF NOT EXISTS wa_contacts (
   display_name TEXT NOT NULL DEFAULT '',
   wa_name TEXT NOT NULL DEFAULT '',
   verified_name TEXT NOT NULL DEFAULT '',
+  profile_picture_id TEXT NOT NULL DEFAULT '',
   kind TEXT NOT NULL,
   is_whatsapp_user BOOLEAN NOT NULL DEFAULT false,
   is_reachable BOOLEAN NOT NULL DEFAULT false,
@@ -233,6 +234,7 @@ END $$;
 
 ALTER TABLE wa_decrypted_messages ADD COLUMN IF NOT EXISTS plaintext_value TEXT NOT NULL DEFAULT '';
 ALTER TABLE wa_inbound_messages ADD COLUMN IF NOT EXISTS contact_ref TEXT NOT NULL DEFAULT '';
+ALTER TABLE wa_contacts ADD COLUMN IF NOT EXISTS profile_picture_id TEXT NOT NULL DEFAULT '';
 
 CREATE UNIQUE INDEX IF NOT EXISTS wa_accounts_e164_number_key ON wa_accounts (e164_number);
 CREATE UNIQUE INDEX IF NOT EXISTS wa_login_states_registration_id_key ON wa_login_states (registration_id);

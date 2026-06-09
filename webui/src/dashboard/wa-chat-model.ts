@@ -24,6 +24,7 @@ export type WaContact = {
   kind: WAContactKind;
   count: number;
   lastAt?: Date;
+  profilePictureURL?: string;
 };
 
 export type WaChatMeta = Pick<WaChatEvent, 'source' | 'sender' | 'copyText' | 'outgoing'> & { displayText: string };
@@ -43,7 +44,7 @@ export function buildWaContacts(events: WaChatEvent[], records: WAContactRecord[
   for (const record of records) {
     const id = recordContactID(record);
     if (!id) continue;
-    contacts.set(id, { id, title: recordTitle(record), subtitle: recordSubtitle(record), kind: record.kind || WAContactKind.WA_CONTACT_KIND_UNSPECIFIED, count: 0, lastAt: parseDate(record.audit?.updated_at) });
+    contacts.set(id, { id, title: recordTitle(record), subtitle: recordSubtitle(record), kind: record.kind || WAContactKind.WA_CONTACT_KIND_UNSPECIFIED, count: 0, lastAt: parseDate(record.audit?.updated_at), profilePictureURL: contactProfilePictureURL(record) });
   }
   for (const event of events) {
     const current = contacts.get(event.contactID);
@@ -54,6 +55,7 @@ export function buildWaContacts(events: WaChatEvent[], records: WAContactRecord[
       kind: current?.kind || WAContactKind.WA_CONTACT_KIND_UNSPECIFIED,
       count: (current?.count || 0) + 1,
       lastAt: newerDate(current?.lastAt, event.at),
+      profilePictureURL: current?.profilePictureURL,
     });
   }
   return [...contacts.values()].sort(compareContacts);
@@ -107,9 +109,7 @@ function messageEvent(item: AccountMessage): WaChatEvent {
   };
 }
 
-function contactID(item: OtpMessage) {
-  return (item.source_party || '').trim() || 'unknown';
-}
+function contactID(item: OtpMessage) { return (item.source_party || '').trim() || 'unknown'; }
 
 function newerDate(a?: Date, b?: Date) {
   if (!a) return b;
@@ -134,8 +134,10 @@ function sourcePartyLabel(value?: string) {
   return raw;
 }
 
-function recordContactID(record: WAContactRecord) {
-  return (record.jid || record.number || record.contact_id || '').trim();
+function recordContactID(record: WAContactRecord) { return (record.jid || record.number || record.contact_id || '').trim(); }
+
+function contactProfilePictureURL(record: WAContactRecord) {
+  return record.profile_picture_id && record.contact_id ? `/api/wa/contacts/${encodeURIComponent(record.contact_id)}/profile-picture` : undefined;
 }
 
 function recordTitle(record: WAContactRecord) {
