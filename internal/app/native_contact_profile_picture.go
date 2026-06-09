@@ -107,34 +107,36 @@ func (e *NativeEngine) contactProfilePictureLocationsFromProfileIQ(ctx context.C
 	var lastErr error
 	for _, target := range targets {
 		for _, pictureType := range contactProfilePictureQueryTypes {
-			trustedContactToken := trustedContactTokenForProfilePicture(state, target, input.ContactPNJID, e.clock.Now())
-			request := buildContactProfilePictureIQ(e.ids.NewID("wappic_"), target, pictureType, input.ContactPictureID, trustedContactToken)
-			response, update, err := client.sendIQ(ctx, state, input.RegisteredIdentityID, defaultWAAppVersion, request, "profile picture iq timed out")
-			lastUpdate = mergeContactProfilePictureUpdate(lastUpdate, update)
-			applyChatdSessionUpdateState(&state, update)
-			if err != nil {
-				if ctx.Err() != nil {
-					return locations, lastUpdate, err
+			for _, pictureID := range contactProfilePictureRequestIDs(input.ContactPictureID) {
+				trustedContactToken := trustedContactTokenForProfilePicture(state, target, input.ContactPNJID, e.clock.Now())
+				request := buildContactProfilePictureIQ(e.ids.NewID("wappic_"), target, pictureType, pictureID, trustedContactToken)
+				response, update, err := client.sendIQ(ctx, state, input.RegisteredIdentityID, defaultWAAppVersion, request, "profile picture iq timed out")
+				lastUpdate = mergeContactProfilePictureUpdate(lastUpdate, update)
+				applyChatdSessionUpdateState(&state, update)
+				if err != nil {
+					if ctx.Err() != nil {
+						return locations, lastUpdate, err
+					}
+					lastErr = err
+					logWAContactProfilePictureIQFailure(target, pictureType, pictureID != "", err)
+					continue
 				}
-				lastErr = err
-				logWAContactProfilePictureIQFailure(target, pictureType, err)
-				continue
-			}
-			location, err := contactProfilePictureLocationFromIQ(response)
-			if err != nil {
-				lastErr = err
-				logWAContactProfilePictureIQFailure(target, pictureType, err)
-				continue
-			}
-			if !contactProfilePictureLocationDownloadable(location) {
-				lastErr = NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture download location not found", false)
-				logWAContactProfilePictureIQFailure(target, pictureType, lastErr)
-				continue
-			}
-			locations = append(locations, location)
-			logWAContactProfilePictureIQLocation(target, pictureType, location)
-			if len(location.InlineData) > 0 {
-				return locations, lastUpdate, nil
+				location, err := contactProfilePictureLocationFromIQ(response)
+				if err != nil {
+					lastErr = err
+					logWAContactProfilePictureIQFailure(target, pictureType, pictureID != "", err)
+					continue
+				}
+				if !contactProfilePictureLocationDownloadable(location) {
+					lastErr = NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture download location not found", false)
+					logWAContactProfilePictureIQFailure(target, pictureType, pictureID != "", lastErr)
+					continue
+				}
+				locations = append(locations, location)
+				logWAContactProfilePictureIQLocation(target, pictureType, pictureID != "", location)
+				if len(location.InlineData) > 0 {
+					return locations, lastUpdate, nil
+				}
 			}
 		}
 	}
@@ -188,6 +190,14 @@ func contactProfilePictureTargets(state nativeState, jid string, pnJID string, n
 		out = append(out, candidate)
 	}
 	return out
+}
+
+func contactProfilePictureRequestIDs(pictureID string) []string {
+	pictureID = contactProfilePictureRequestID(pictureID)
+	if pictureID == "" {
+		return []string{""}
+	}
+	return []string{"", pictureID}
 }
 
 func buildContactProfilePictureIQ(id string, jid string, pictureType string, pictureID string, trustedContactToken []byte) chatdNode {
@@ -258,15 +268,15 @@ func (e *NativeEngine) downloadContactProfilePicture(ctx context.Context, locati
 	return nil, "", err
 }
 
-func logWAContactProfilePictureIQFailure(target string, pictureType string, err error) {
+func logWAContactProfilePictureIQFailure(target string, pictureType string, requestIDPresent bool, err error) {
 	if err == nil {
 		return
 	}
-	log.Printf("WA contact profile picture iq failed target_kind=%s picture_type=%s reason=%s", contactProfilePictureTargetKind(target), safeProxyLogToken(pictureType, "unknown"), contactProfilePictureFailureReason(err))
+	log.Printf("WA contact profile picture iq failed target_kind=%s picture_type=%s request_id=%t reason=%s", contactProfilePictureTargetKind(target), safeProxyLogToken(pictureType, "unknown"), requestIDPresent, contactProfilePictureFailureReason(err))
 }
 
-func logWAContactProfilePictureIQLocation(target string, pictureType string, location contactProfilePictureLocation) {
-	log.Printf("WA contact profile picture iq location target_kind=%s picture_type=%s inline=%t direct_path=%t url=%t", contactProfilePictureTargetKind(target), safeProxyLogToken(pictureType, "unknown"), len(location.InlineData) > 0, location.DirectPath != "", location.URL != "")
+func logWAContactProfilePictureIQLocation(target string, pictureType string, requestIDPresent bool, location contactProfilePictureLocation) {
+	log.Printf("WA contact profile picture iq location target_kind=%s picture_type=%s request_id=%t inline=%t direct_path=%t url=%t", contactProfilePictureTargetKind(target), safeProxyLogToken(pictureType, "unknown"), requestIDPresent, len(location.InlineData) > 0, location.DirectPath != "", location.URL != "")
 }
 
 func logWAContactProfilePictureDownloadFallback(err error) {
