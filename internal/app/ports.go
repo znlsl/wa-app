@@ -163,6 +163,7 @@ type EngineContactProfilePictureInput struct {
 	RegisteredIdentityID string
 	ContactJID           string
 	ContactPNJID         string
+	ContactPictureID     string
 	RemoteTimeout        time.Duration
 }
 
