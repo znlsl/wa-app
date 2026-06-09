@@ -51,17 +51,18 @@ func (e *NativeEngine) ResolveContactProfilePicture(ctx context.Context, input E
 		return EngineContactProfilePictureResult{Err: err}
 	}
 	client := newChatdClient(chatdConfigForState(proxyURL, state, timeout))
-	request := buildContactProfilePictureIQ(e.ids.NewID("wappic_"), jid, "preview")
-	response, update, err := client.sendIQ(ctx, state, input.RegisteredIdentityID, defaultWAAppVersion, request, "profile picture iq timed out")
+	location, update, err := e.contactProfilePictureLocationFromUsync(ctx, client, state, input, jid)
 	if applyChatdConnectionState(&state, update) {
 		_ = e.saveState(ctx, input.ClientProfileID, state)
 	}
 	if err != nil {
-		return EngineContactProfilePictureResult{Err: err}
-	}
-	location, err := contactProfilePictureLocationFromIQ(response)
-	if err != nil {
-		return EngineContactProfilePictureResult{Err: err}
+		location, update, err = e.contactProfilePictureLocationFromProfileIQ(ctx, client, state, input, jid)
+		if applyChatdConnectionState(&state, update) {
+			_ = e.saveState(ctx, input.ClientProfileID, state)
+		}
+		if err != nil {
+			return EngineContactProfilePictureResult{Err: err}
+		}
 	}
 	if len(location.InlineData) > 0 {
 		contentType, err := profilePictureContentType(location.InlineData, "")
@@ -73,6 +74,49 @@ func (e *NativeEngine) ResolveContactProfilePicture(ctx context.Context, input E
 	}
 	data, contentType, err := httpClient.getProfilePicture(ctx, location, state.UserAgent)
 	return EngineContactProfilePictureResult{ProfilePictureID: location.ID, ContentType: contentType, Data: data, Err: err}
+}
+
+func (e *NativeEngine) contactProfilePictureLocationFromUsync(ctx context.Context, client *chatdClient, state nativeState, input EngineContactProfilePictureInput, jid string) (contactProfilePictureLocation, chatdSessionUpdate, error) {
+	variant := contactUsyncVariant{
+		Name:           "profile_picture_usync",
+		Context:        "interactive",
+		UserContainer:  "list",
+		UserAddressing: contactUsyncUserLID,
+		Query: []chatdNode{
+			{Tag: "contact", Attrs: map[string]string{"addressing_mode": "lid"}},
+			{Tag: "lid"},
+			buildContactUsyncPictureQuery(),
+		},
+	}
+	ref := contactUsyncRef{QueryJID: jid, FallbackLID: jid}
+	request := buildContactUsyncIQ(e.ids.NewID("wappic_usync_"), e.ids.NewID("sync_sid_picture_"), []contactUsyncRef{ref}, variant)
+	response, update, err := client.sendIQ(ctx, state, input.RegisteredIdentityID, defaultWAAppVersion, request, "profile picture usync iq timed out")
+	if err != nil {
+		return contactProfilePictureLocation{}, update, err
+	}
+	usync, ok := findChatdNode(response, "usync")
+	if !ok {
+		return contactProfilePictureLocation{}, update, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture not found", false)
+	}
+	for _, listTag := range []string{"list", "side_list"} {
+		if listNode, ok := chatdChild(usync, listTag); ok {
+			if picture, ok := findChatdNode(listNode, "picture"); ok {
+				location, err := contactProfilePictureLocationFromPicture(picture)
+				return location, update, err
+			}
+		}
+	}
+	return contactProfilePictureLocation{}, update, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture not found", false)
+}
+
+func (e *NativeEngine) contactProfilePictureLocationFromProfileIQ(ctx context.Context, client *chatdClient, state nativeState, input EngineContactProfilePictureInput, jid string) (contactProfilePictureLocation, chatdSessionUpdate, error) {
+	request := buildContactProfilePictureIQ(e.ids.NewID("wappic_"), jid, "preview")
+	response, update, err := client.sendIQ(ctx, state, input.RegisteredIdentityID, defaultWAAppVersion, request, "profile picture iq timed out")
+	if err != nil {
+		return contactProfilePictureLocation{}, update, err
+	}
+	location, err := contactProfilePictureLocationFromIQ(response)
+	return location, update, err
 }
 
 func buildContactProfilePictureIQ(id string, jid string, pictureType string) chatdNode {
@@ -94,6 +138,10 @@ func contactProfilePictureLocationFromIQ(response chatdNode) (contactProfilePict
 	if !ok {
 		return contactProfilePictureLocation{}, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture not found", false)
 	}
+	return contactProfilePictureLocationFromPicture(picture)
+}
+
+func contactProfilePictureLocationFromPicture(picture chatdNode) (contactProfilePictureLocation, error) {
 	status := strings.TrimSpace(picture.Attrs["status"])
 	if status != "" && status != "200" && status != "ok" {
 		return contactProfilePictureLocation{}, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture not found", false)
