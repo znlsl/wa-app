@@ -123,21 +123,16 @@ function contactProfilePictureURL(record: WAContactRecord) {
 
 function recordTitle(record: WAContactRecord) {
   const name = firstContactName(record);
-  if (record.kind === WAContactKind.WA_CONTACT_KIND_BUSINESS) return name || phoneTitle(record.number) || businessJidTitle(record.jid) || '企业联系人';
+  if (record.kind === WAContactKind.WA_CONTACT_KIND_BUSINESS) return name || '企业联系人';
   return name || phoneTitle(record.number) || sourcePartyLabel(record.jid) || '未知联系人';
 }
 
 function recordSubtitle(record: WAContactRecord) {
   if (record.kind === WAContactKind.WA_CONTACT_KIND_SYSTEM) return '';
-  if (record.kind === WAContactKind.WA_CONTACT_KIND_BUSINESS) return firstContactName(record) && record.number ? `+${record.number}` : '';
+  if (record.kind === WAContactKind.WA_CONTACT_KIND_BUSINESS) return '';
   if (record.number) return `+${record.number}`;
   if (record.jid?.endsWith('@lid')) return 'WA 联系人';
   return sourcePartyLabel(record.jid);
-}
-
-function businessJidTitle(jid?: string) {
-  const title = sourcePartyLabel(jid);
-  return title === '未知联系人' ? '' : title;
 }
 
 function compareContacts(a: WaContact, b: WaContact) {
