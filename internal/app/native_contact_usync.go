@@ -456,6 +456,7 @@ func contactFromContactUsyncUser(accountID string, userNode chatdNode, now time.
 	if business || verifiedName != "" {
 		contact.Kind = waappv1.WAContactKind_WA_CONTACT_KIND_BUSINESS
 	}
+	normalizeWAContactNames(contact)
 	return contact
 }
 
@@ -784,6 +785,7 @@ func contactFromBusinessNode(accountID string, node chatdNode, now time.Time, re
 	contact.VerifiedName = verifiedName
 	contact.ProfilePictureId = contactProfilePictureID(node)
 	contact.Kind = waappv1.WAContactKind_WA_CONTACT_KIND_BUSINESS
+	normalizeWAContactNames(contact)
 	return contact
 }
 
@@ -912,7 +914,7 @@ func contactUsyncHasDisplayIdentity(contact *waappv1.WAContact) bool {
 	if contact == nil {
 		return false
 	}
-	if contact.GetWaName() != "" || contact.GetVerifiedName() != "" {
+	if resolvedWAContactName(contact.GetWaName(), contact.GetNumber()) != "" || resolvedWAContactName(contact.GetVerifiedName(), contact.GetNumber()) != "" {
 		return true
 	}
 	return !contactDisplayNeedsResolution(contact)
@@ -927,11 +929,7 @@ func contactDisplayNeedsResolution(contact *waappv1.WAContact) bool {
 		return false
 	}
 	name := strings.TrimSpace(contact.GetDisplayName())
-	if name == "" || name == "未知联系人" || strings.HasPrefix(name, "联系人 ") || strings.HasPrefix(name, "LID ") {
-		return true
-	}
-	number := strings.TrimSpace(contact.GetNumber())
-	return number != "" && (name == "+"+number || digitsOnly(name) == number)
+	return contactNameNeedsResolution(name, contact.GetNumber())
 }
 
 func contactUsyncDisplayIdentityCount(contacts []*waappv1.WAContact) int {
@@ -950,7 +948,7 @@ func betterWAContactDisplayName(contact *waappv1.WAContact, candidate string) st
 		return contact.GetDisplayName()
 	}
 	current := contact.GetDisplayName()
-	if current == "" || current == "未知联系人" || strings.HasPrefix(current, "联系人 ") || strings.HasPrefix(current, "LID ") || contactDisplayNeedsResolution(contact) {
+	if contactNameNeedsResolution(current, contact.GetNumber()) || contactDisplayNeedsResolution(contact) {
 		return candidate
 	}
 	return current

@@ -442,13 +442,12 @@ type contactRow struct {
 
 func (r contactRow) toProto() *waappv1.WAContact {
 	kind := waappv1.WAContactKind(waappv1.WAContactKind_value[r.kind])
-	displayName := firstNonEmpty(storedWAContactDisplayName(r.displayName, kind, r.jid, r.number), fallbackWAContactDisplayName(kind, r.jid, r.number))
-	return &waappv1.WAContact{
+	contact := &waappv1.WAContact{
 		ContactId:        r.id,
 		WaAccountId:      r.waAccountIDValue,
 		Jid:              r.jid,
 		Number:           r.number,
-		DisplayName:      displayName,
+		DisplayName:      r.displayName,
 		WaName:           r.waName,
 		VerifiedName:     r.verifiedName,
 		ProfilePictureId: r.profilePictureID,
@@ -466,4 +465,6 @@ func (r contactRow) toProto() *waappv1.WAContact {
 			waappv1.MessageEncryptionState(waappv1.MessageEncryptionState_value[r.lastEncryption]),
 		),
 	}
+	enrichWAContactFallback(contact)
+	return contact
 }

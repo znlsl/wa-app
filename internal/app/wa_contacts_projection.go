@@ -124,6 +124,7 @@ func contactFromContactHint(accountID string, hint waContactHint, seenAt time.Ti
 	if hint.VerifiedName != "" {
 		contact.Kind = waappv1.WAContactKind_WA_CONTACT_KIND_BUSINESS
 	}
+	normalizeWAContactNames(contact)
 	return contact
 }
 
@@ -193,15 +194,12 @@ func fallbackWAContactDisplayName(kind waappv1.WAContactKind, jid string, number
 	}
 }
 
-func storedWAContactDisplayName(value string, kind waappv1.WAContactKind, jid string, number string) string {
+func storedWAContactDisplayName(value string, number string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return ""
 	}
-	if strings.HasSuffix(jid, "@lid") && number == "" && (value == "未知联系人" || strings.HasPrefix(value, "LID ")) {
-		return ""
-	}
-	if kind == waappv1.WAContactKind_WA_CONTACT_KIND_USER && strings.HasPrefix(value, "LID ") {
+	if contactNameNeedsResolution(value, number) {
 		return ""
 	}
 	return value
@@ -211,7 +209,8 @@ func enrichWAContactFallback(contact *waappv1.WAContact) {
 	if contact == nil {
 		return
 	}
-	contact.DisplayName = storedWAContactDisplayName(contact.GetDisplayName(), contact.GetKind(), contact.GetJid(), contact.GetNumber())
+	normalizeWAContactNames(contact)
+	contact.DisplayName = storedWAContactDisplayName(contact.GetDisplayName(), contact.GetNumber())
 	if contact.GetDisplayName() != "" {
 		return
 	}
