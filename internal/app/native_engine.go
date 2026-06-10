@@ -293,6 +293,29 @@ func applyChatdSessionUpdateState(state *nativeState, update chatdSessionUpdate)
 	return changed
 }
 
+func mergeChatdSessionUpdate(current chatdSessionUpdate, next chatdSessionUpdate) chatdSessionUpdate {
+	if next.RoutingInfo != "" {
+		current.RoutingInfo = next.RoutingInfo
+	}
+	if next.Endpoint.Host != "" {
+		current.Endpoint = next.Endpoint
+	}
+	if next.ServerStaticPublic != "" {
+		current.ServerStaticPublic = next.ServerStaticPublic
+	}
+	if len(next.ContactHints) > 0 {
+		current.ContactHints = append(current.ContactHints, next.ContactHints...)
+	}
+	if len(next.PrivacyTokens) > 0 {
+		current.PrivacyTokens = dedupePrivacyTokenUpdates(append(current.PrivacyTokens, next.PrivacyTokens...))
+	}
+	return current
+}
+
+func hasChatdSessionUpdate(update chatdSessionUpdate) bool {
+	return update.RoutingInfo != "" || update.Endpoint.Host != "" || update.ServerStaticPublic != "" || len(update.ContactHints) > 0 || len(update.PrivacyTokens) > 0
+}
+
 func applyChatdConnectionState(state *nativeState, update chatdSessionUpdate) bool {
 	if state == nil {
 		return false

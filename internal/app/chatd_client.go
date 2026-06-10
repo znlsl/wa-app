@@ -64,6 +64,11 @@ type chatdSessionUpdate struct {
 	PrivacyTokens      []nativePrivacyTokenUpdate
 }
 
+type chatdReceivedItem struct {
+	message *waappv1.InboundMessage
+	payload *chatdEncPayload
+}
+
 func chatdPhase(phase string, err error) error {
 	if err == nil {
 		return nil
@@ -223,57 +228,100 @@ func (s *chatdSession) receiveBatch(input EngineMessageInput, now time.Time) ([]
 		maxMessages = 10
 	}
 	deadline := waitDeadline(input.WaitTimeout)
-	messages := []*waappv1.InboundMessage{}
-	payloads := []chatdEncPayload{}
-	for len(messages) < maxMessages && time.Now().Before(deadline) {
+	items := []chatdReceivedItem{}
+	for len(items) < maxMessages && time.Now().Before(deadline) {
 		_ = s.conn.SetReadDeadline(time.Now().Add(time.Until(deadline)))
 		node, err := s.transport.readNode()
 		if err != nil {
 			if ne, ok := err.(net.Error); ok && ne.Timeout() {
 				break
 			}
-			if len(messages) > 0 {
+			if len(items) > 0 {
 				break
 			}
 			return nil, nil, update, chatdPhase("chatd frame read", err)
 		}
-		if node.Tag == "xmlstreamend" {
-			return nil, nil, update, newChatdError("server closed xml stream")
-		}
-		if isChatdTerminalNode(node) {
-			return nil, nil, update, newChatdError("server sent %s", controlNodeSummary(node))
-		}
-		if ack, ok := buildAckForNode(node); ok {
-			if err := s.transport.sendNode(ack); err != nil {
-				return nil, nil, update, chatdPhase("chatd ack write", err)
-			}
-		}
-		if nextRouting := routingInfoFromNode(node); nextRouting != "" {
-			update.RoutingInfo = nextRouting
-		}
-		update.ContactHints = dedupeWAContactHints(append(update.ContactHints, contactHintsFromChatdNode(node)...))
-		update.PrivacyTokens = dedupePrivacyTokenUpdates(append(update.PrivacyTokens, privacyTokenUpdatesFromChatdNode(node)...))
-		encs := iterEncPayloads(node)
-		if len(encs) == 0 {
-			if node.Tag != "message" {
-				continue
-			}
-			contact := firstNonEmpty(node.Attrs["from"], node.Attrs["participant"])
-			sender := firstNonEmpty(node.Attrs["participant"], node.Attrs["from"])
-			payloadSummary := nodePayloadSummary(node)
-			messages = append(messages, &waappv1.InboundMessage{MessageId: inboundMessageID(input.WAAccountID, node.Attrs["id"], node.Tag, sender, payloadSummary), MessageSessionId: input.MessageSessionID, Kind: inboundKind(node.Tag), EncryptionState: waappv1.MessageEncryptionState_MESSAGE_ENCRYPTION_STATE_PLAINTEXT, AckStatus: ackStatusForNode(node), ContactRef: contact, SenderRef: sender, PayloadRef: "node:" + redacted(payloadSummary), ProviderMessageId: node.Attrs["id"], ProviderTimestamp: chatdProviderTimestamp(node.Attrs["t"]), DeleteStatus: waappv1.MessageDeleteStatus_MESSAGE_DELETE_STATUS_NOT_DELETED, ReceivedAt: timestamppb.New(now)})
-			continue
-		}
-		for _, enc := range encs {
-			payloadRef := payloadRefForEnc(input.WAAccountID, enc.Payload)
-			payloads = append(payloads, enc)
-			messages = append(messages, &waappv1.InboundMessage{MessageId: inboundMessageID(input.WAAccountID, enc.StanzaID, node.Tag, enc.Sender, enc.Path+":"+hexKey(enc.Payload)), MessageSessionId: input.MessageSessionID, Kind: inboundKind(node.Tag), EncryptionState: waappv1.MessageEncryptionState_MESSAGE_ENCRYPTION_STATE_ENCRYPTED, AckStatus: ackStatusForNode(node), ContactRef: enc.Contact, SenderRef: enc.Sender, PayloadRef: payloadRef, ProviderMessageId: enc.StanzaID, ProviderTimestamp: chatdProviderTimestamp(enc.StanzaTimestamp), DeleteStatus: waappv1.MessageDeleteStatus_MESSAGE_DELETE_STATUS_NOT_DELETED, ReceivedAt: timestamppb.New(now)})
-			if len(messages) >= maxMessages {
+		nextUpdate, nextItems, err := s.consumeIncomingNode(input, node, update, now)
+		update = nextUpdate
+		if err != nil {
+			if len(items) > 0 {
 				break
 			}
+			return nil, nil, update, err
+		}
+		items = appendReceivedItems(items, nextItems, maxMessages)
+	}
+	messages, payloads := splitReceivedItems(items)
+	return messages, payloads, update, nil
+}
+
+func (s *chatdSession) consumeIncomingNode(input EngineMessageInput, node chatdNode, update chatdSessionUpdate, now time.Time) (chatdSessionUpdate, []chatdReceivedItem, error) {
+	if node.Tag == "xmlstreamend" {
+		return update, nil, newChatdError("server closed xml stream")
+	}
+	if isChatdTerminalNode(node) {
+		return update, nil, newChatdError("server sent %s", controlNodeSummary(node))
+	}
+	if ack, ok := buildAckForNode(node); ok {
+		if err := s.transport.sendNode(ack); err != nil {
+			return update, nil, chatdPhase("chatd ack write", err)
 		}
 	}
-	return messages, payloads, update, nil
+	if nextRouting := routingInfoFromNode(node); nextRouting != "" {
+		update.RoutingInfo = nextRouting
+	}
+	update.ContactHints = dedupeWAContactHints(append(update.ContactHints, contactHintsFromChatdNode(node)...))
+	update.PrivacyTokens = dedupePrivacyTokenUpdates(append(update.PrivacyTokens, privacyTokenUpdatesFromChatdNode(node)...))
+	if input.MessageSessionID == "" {
+		return update, nil, nil
+	}
+	encs := iterEncPayloads(node)
+	if len(encs) == 0 {
+		if node.Tag != "message" {
+			return update, nil, nil
+		}
+		contact := firstNonEmpty(node.Attrs["from"], node.Attrs["participant"])
+		sender := firstNonEmpty(node.Attrs["participant"], node.Attrs["from"])
+		payloadSummary := nodePayloadSummary(node)
+		message := &waappv1.InboundMessage{MessageId: inboundMessageID(input.WAAccountID, node.Attrs["id"], node.Tag, sender, payloadSummary), MessageSessionId: input.MessageSessionID, Kind: inboundKind(node.Tag), EncryptionState: waappv1.MessageEncryptionState_MESSAGE_ENCRYPTION_STATE_PLAINTEXT, AckStatus: ackStatusForNode(node), ContactRef: contact, SenderRef: sender, PayloadRef: "node:" + redacted(payloadSummary), ProviderMessageId: node.Attrs["id"], ProviderTimestamp: chatdProviderTimestamp(node.Attrs["t"]), DeleteStatus: waappv1.MessageDeleteStatus_MESSAGE_DELETE_STATUS_NOT_DELETED, ReceivedAt: timestamppb.New(now)}
+		return update, []chatdReceivedItem{{message: message}}, nil
+	}
+	items := make([]chatdReceivedItem, 0, len(encs))
+	for _, enc := range encs {
+		payload := enc
+		payloadRef := payloadRefForEnc(input.WAAccountID, payload.Payload)
+		message := &waappv1.InboundMessage{MessageId: inboundMessageID(input.WAAccountID, payload.StanzaID, node.Tag, payload.Sender, payload.Path+":"+hexKey(payload.Payload)), MessageSessionId: input.MessageSessionID, Kind: inboundKind(node.Tag), EncryptionState: waappv1.MessageEncryptionState_MESSAGE_ENCRYPTION_STATE_ENCRYPTED, AckStatus: ackStatusForNode(node), ContactRef: payload.Contact, SenderRef: payload.Sender, PayloadRef: payloadRef, ProviderMessageId: payload.StanzaID, ProviderTimestamp: chatdProviderTimestamp(payload.StanzaTimestamp), DeleteStatus: waappv1.MessageDeleteStatus_MESSAGE_DELETE_STATUS_NOT_DELETED, ReceivedAt: timestamppb.New(now)}
+		items = append(items, chatdReceivedItem{message: message, payload: &payload})
+	}
+	return update, items, nil
+}
+
+func appendReceivedItems(dst []chatdReceivedItem, src []chatdReceivedItem, limit int) []chatdReceivedItem {
+	if limit <= 0 {
+		return append(dst, src...)
+	}
+	for _, item := range src {
+		if len(dst) >= limit {
+			return dst
+		}
+		dst = append(dst, item)
+	}
+	return dst
+}
+
+func splitReceivedItems(items []chatdReceivedItem) ([]*waappv1.InboundMessage, []chatdEncPayload) {
+	messages := make([]*waappv1.InboundMessage, 0, len(items))
+	payloads := []chatdEncPayload{}
+	for _, item := range items {
+		if item.message == nil {
+			continue
+		}
+		messages = append(messages, item.message)
+		if item.payload != nil {
+			payloads = append(payloads, *item.payload)
+		}
+	}
+	return messages, payloads
 }
 
 func chatdProviderTimestamp(value string) *timestamppb.Timestamp {

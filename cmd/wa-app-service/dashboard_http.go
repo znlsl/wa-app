@@ -176,7 +176,7 @@ func (s *dashboardHTTP) handleAccountProfilePicture(w http.ResponseWriter, r *ht
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "wa_account_id is required"})
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
 	picture, err := s.service.GetWAAccountProfilePicture(ctx, accountID)
 	if err != nil {
@@ -431,7 +431,7 @@ func (s *dashboardHTTP) handleContactProfilePicture(w http.ResponseWriter, r *ht
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "contact id is required"})
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
 	picture, err := s.service.GetWAContactProfilePicture(ctx, contactID)
 	if err != nil {

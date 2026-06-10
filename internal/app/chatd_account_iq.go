@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"strconv"
 	"strings"
@@ -23,40 +24,57 @@ func (c *chatdClient) sendIQ(ctx context.Context, state nativeState, registeredI
 		return chatdNode{}, chatdSessionUpdate{}, err
 	}
 	defer session.Close()
+	response, _, update, err := session.sendIQ(ctx, EngineMessageInput{}, request, c.cfg.Timeout, timeoutMessage)
+	return response, update, err
+}
 
-	conn := session.conn
-	transport := session.transport
-	update := session.update()
-	_ = conn.SetDeadline(time.Now().Add(c.cfg.Timeout))
-	if err := transport.sendNode(request); err != nil {
-		return chatdNode{}, update, chatdPhase("chatd iq write", err)
+func (s *chatdSession) sendIQ(ctx context.Context, input EngineMessageInput, request chatdNode, timeout time.Duration, timeoutMessage string) (chatdNode, []chatdReceivedItem, chatdSessionUpdate, error) {
+	if s == nil || s.conn == nil {
+		return chatdNode{}, nil, chatdSessionUpdate{}, fmt.Errorf("chatd session is not open")
 	}
-	deadline := time.Now().Add(c.cfg.Timeout)
+	if timeout <= 0 {
+		timeout = defaultChatdReadWindow
+	}
+	conn := s.conn
+	transport := s.transport
+	update := s.update()
+	deadline := time.Now().Add(timeout)
+	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+		deadline = ctxDeadline
+	}
+	if !deadline.After(time.Now()) {
+		return chatdNode{}, nil, update, errors.New(timeoutMessage)
+	}
+	_ = conn.SetDeadline(deadline)
+	defer func() { _ = conn.SetDeadline(time.Time{}) }()
+	if err := transport.sendNode(request); err != nil {
+		return chatdNode{}, nil, update, chatdPhase("chatd iq write", err)
+	}
+	items := []chatdReceivedItem{}
 	requestID := request.Attrs["id"]
 	for time.Now().Before(deadline) {
-		_ = conn.SetReadDeadline(time.Now().Add(time.Until(deadline)))
+		if ctx.Err() != nil {
+			return chatdNode{}, items, update, ctx.Err()
+		}
+		_ = conn.SetReadDeadline(deadline)
 		node, err := transport.readNode()
 		if err != nil {
 			if ne, ok := err.(net.Error); ok && ne.Timeout() {
-				return chatdNode{}, update, errors.New(timeoutMessage)
+				return chatdNode{}, items, update, errors.New(timeoutMessage)
 			}
-			return chatdNode{}, update, chatdPhase("chatd iq read", err)
+			return chatdNode{}, items, update, chatdPhase("chatd iq read", err)
 		}
-		if ack, ok := buildAckForNode(node); ok {
-			if err := transport.sendNode(ack); err != nil {
-				return chatdNode{}, update, chatdPhase("chatd ack write", err)
-			}
+		nextUpdate, nextItems, err := s.consumeIncomingNode(input, node, update, time.Now())
+		update = nextUpdate
+		items = append(items, nextItems...)
+		if err != nil {
+			return chatdNode{}, items, update, err
 		}
-		if nextRouting := routingInfoFromNode(node); nextRouting != "" {
-			update.RoutingInfo = nextRouting
-		}
-		update.ContactHints = dedupeWAContactHints(append(update.ContactHints, contactHintsFromChatdNode(node)...))
-		update.PrivacyTokens = dedupePrivacyTokenUpdates(append(update.PrivacyTokens, privacyTokenUpdatesFromChatdNode(node)...))
 		if node.Tag == "iq" && node.Attrs["id"] == requestID {
-			return node, update, nil
+			return node, items, update, nil
 		}
 	}
-	return chatdNode{}, update, errors.New(timeoutMessage)
+	return chatdNode{}, items, update, errors.New(timeoutMessage)
 }
 
 func chatdIQError(node chatdNode) error {
