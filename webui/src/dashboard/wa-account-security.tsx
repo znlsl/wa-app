@@ -1,14 +1,25 @@
-import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
-import { CheckCircle2, KeyRound, Mail, Pencil, Send, ShieldCheck, X } from 'lucide-react';
+import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
+import { CheckCircle2, KeyRound, Mail, Pencil, RefreshCw, Send, ShieldCheck, X } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AccountSettingsOperationStatus } from '../proto/byte/v/forge/waapp/v1/account_settings';
 import type { GetTwoFactorAuthStatusResponse } from '../proto/byte/v/forge/waapp/v1/account_settings';
 import type { WaAccountProjection } from './wa-api';
 import { getWaTwoFactorAuthStatus, requestWaAccountEmailOtp, setWaAccountEmail, setWaTwoFactorAuthSettings, verifyWaAccountEmailOtp, waAccountID, waKeys } from './wa-api';
-import { Badge, type BadgeVariant, Button, Field, FieldGroup, FieldLabel, Input } from './ui';
+import {
+  emailBadgeVariant,
+  emailStatusLabel,
+  initialTwoFactorStatus,
+  shouldCollectEmailOtpAfterSet,
+  shouldShowEmailOtp,
+  statusLabel,
+  twoFactorBadgeVariant,
+  twoFactorConfigured,
+  twoFactorEmailConfigured,
+  twoFactorStatusLabel,
+} from './wa-account-security-model';
+import { Badge, Button, Field, FieldGroup, FieldLabel, Input } from './ui';
 
 type Props = { account: WaAccountProjection; onDone: (message: string) => void; onError: (message: string) => void };
-type TwoFactorStatusView = { isPending: boolean; isError: boolean; data?: { status?: { configured?: boolean; email_configured?: boolean } } };
 
 export function WaAccountSecurityPanel({ account, onDone, onError }: Props) {
   const queryClient = useQueryClient();
@@ -22,16 +33,15 @@ export function WaAccountSecurityPanel({ account, onDone, onError }: Props) {
   const handleError = (error: unknown) => onError(error instanceof Error ? error.message : String(error));
   const handleSuccess = (message: string, status?: AccountSettingsOperationStatus) => { setLastStatus(status); onDone(message); };
   const accountID = waAccountID(account);
-  const statusKey = waKeys.twoFactorStatus(accountID);
+  const statusKey = useMemo(() => waKeys.twoFactorStatus(accountID), [accountID]);
   const patchStatus = (patch: Partial<NonNullable<GetTwoFactorAuthStatusResponse['status']>>) => queryClient.setQueryData<GetTwoFactorAuthStatusResponse>(statusKey, (previous) => ({ error: previous?.error, status: { configured: previous?.status?.configured || false, email_configured: previous?.status?.email_configured || false, ...patch } }));
   const twoFactorStatus = useQuery({
     queryKey: statusKey,
-    queryFn: () => getWaTwoFactorAuthStatus(account),
-    enabled: Boolean(accountID),
+    queryFn: () => getWaTwoFactorAuthStatus(account, { remoteRefresh: true }),
+    enabled: false,
     gcTime: 30 * 60_000,
-    refetchOnMount: false,
-    refetchOnWindowFocus: false,
-    staleTime: 10 * 60_000,
+    initialData: () => initialTwoFactorStatus(account.two_factor_auth),
+    staleTime: Infinity,
   });
   const pinConfigured = twoFactorConfigured(twoFactorStatus);
   const emailConfigured = twoFactorEmailConfigured(twoFactorStatus);
@@ -81,15 +91,17 @@ export function WaAccountSecurityPanel({ account, onDone, onError }: Props) {
       setEmailOtp('');
       setEmailOtpVisible(shouldShowEmailOtp(status));
       if (status === AccountSettingsOperationStatus.ACCOUNT_SETTINGS_OPERATION_STATUS_VERIFIED) patchStatus({ email_configured: true });
-      else void twoFactorStatus.refetch();
       handleSuccess('邮箱 OTP 校验请求已提交', status);
     },
     onError: handleError,
   });
   const busy = twoFactor.isPending || emailSet.isPending || otpRequest.isPending || otpVerify.isPending;
   const handleEmailChange = (value: string) => { setEmail(value); setEmailOtp(''); setEmailOtpVisible(false); };
-  const pinFormVisible = statusReady(twoFactorStatus) && (!pinConfigured || pinEditing);
-  const emailFormVisible = statusReady(twoFactorStatus) && ((!emailConfigured && !emailOtpVisible) || emailEditing);
+  const pinFormVisible = !pinConfigured || pinEditing;
+  const emailFormVisible = (!emailConfigured && !emailOtpVisible) || emailEditing;
+  useEffect(() => {
+    if (account.two_factor_auth) queryClient.setQueryData(statusKey, initialTwoFactorStatus(account.two_factor_auth));
+  }, [account.two_factor_auth, queryClient, statusKey]);
   useEffect(() => {
     setPin('');
     setEmail('');
@@ -100,7 +112,10 @@ export function WaAccountSecurityPanel({ account, onDone, onError }: Props) {
   }, [accountID]);
   return (
     <section className="grid gap-4">
-      {lastStatus !== undefined ? <div className="flex items-center justify-end"><Badge variant="outline">{statusLabel(lastStatus)}</Badge></div> : null}
+      <div className="flex items-center justify-end gap-2">
+        {lastStatus !== undefined ? <Badge variant="outline">{statusLabel(lastStatus)}</Badge> : null}
+        <Button size="icon" variant="ghost" type="button" disabled={busy || twoFactorStatus.isFetching} title="同步状态" aria-label="同步状态" onClick={() => { void twoFactorStatus.refetch(); }}><RefreshCw size={16} className={twoFactorStatus.isFetching ? 'animate-spin' : ''} /></Button>
+      </div>
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="grid gap-3">
           <SettingHeader icon={<ShieldCheck size={15} />} title={pinAction} badge={<Badge variant={twoFactorBadgeVariant(twoFactorStatus)}>{twoFactorStatusLabel(twoFactorStatus)}</Badge>} canEdit={pinConfigured && !pinEditing && !busy} onEdit={() => setPinEditing(true)} />
@@ -138,60 +153,3 @@ function EmailForm({ email, busy, configured, onEmailChange, onCancel, onSubmit 
 }
 
 function submit(event: FormEvent<HTMLFormElement>, run: () => void) { event.preventDefault(); run(); }
-
-function statusReady(query: TwoFactorStatusView) {
-  return !query.isPending && !query.isError;
-}
-
-function shouldCollectEmailOtpAfterSet(status?: AccountSettingsOperationStatus) {
-  return status !== AccountSettingsOperationStatus.ACCOUNT_SETTINGS_OPERATION_STATUS_VERIFIED
-    && status !== AccountSettingsOperationStatus.ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED;
-}
-
-function shouldShowEmailOtp(status?: AccountSettingsOperationStatus) {
-  return status === AccountSettingsOperationStatus.ACCOUNT_SETTINGS_OPERATION_STATUS_NEEDS_VERIFICATION
-    || status === AccountSettingsOperationStatus.ACCOUNT_SETTINGS_OPERATION_STATUS_WAITING
-    || status === AccountSettingsOperationStatus.ACCOUNT_SETTINGS_OPERATION_STATUS_CODE_MISMATCH;
-}
-
-function twoFactorStatusLabel(query: TwoFactorStatusView) {
-  if (query.isPending) return '读取中';
-  if (query.isError) return '读取失败';
-  return query.data?.status?.configured ? '已配置' : '未配置';
-}
-
-function emailStatusLabel(query: TwoFactorStatusView) {
-  if (query.isPending) return '读取中';
-  if (query.isError) return '读取失败';
-  return query.data?.status?.email_configured ? '已配置' : '未配置';
-}
-
-function twoFactorBadgeVariant(query: TwoFactorStatusView): BadgeVariant {
-  if (query.isError) return 'destructive';
-  return query.data?.status?.configured ? 'default' : 'outline';
-}
-
-function emailBadgeVariant(query: TwoFactorStatusView): BadgeVariant {
-  if (query.isError) return 'destructive';
-  return query.data?.status?.email_configured ? 'default' : 'outline';
-}
-
-function twoFactorConfigured(query: TwoFactorStatusView) {
-  return Boolean(query.data?.status?.configured);
-}
-
-function twoFactorEmailConfigured(query: TwoFactorStatusView) {
-  return Boolean(query.data?.status?.email_configured);
-}
-
-function statusLabel(status?: AccountSettingsOperationStatus) {
-  switch (status) {
-    case AccountSettingsOperationStatus.ACCOUNT_SETTINGS_OPERATION_STATUS_NEEDS_VERIFICATION: return '待邮箱验证';
-    case AccountSettingsOperationStatus.ACCOUNT_SETTINGS_OPERATION_STATUS_WAITING: return '等待 OTP';
-    case AccountSettingsOperationStatus.ACCOUNT_SETTINGS_OPERATION_STATUS_VERIFIED: return '已验证';
-    case AccountSettingsOperationStatus.ACCOUNT_SETTINGS_OPERATION_STATUS_CODE_MISMATCH: return '验证码不匹配';
-    case AccountSettingsOperationStatus.ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED: return '已拒绝';
-    case AccountSettingsOperationStatus.ACCOUNT_SETTINGS_OPERATION_STATUS_ACCEPTED: return '已受理';
-    default: return '未执行';
-  }
-}

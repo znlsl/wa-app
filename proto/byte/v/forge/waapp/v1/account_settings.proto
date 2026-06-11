@@ -75,6 +75,7 @@ message TwoFactorAuthStatus {
 message GetTwoFactorAuthStatusRequest {
   RequestContext context = 1;
   AccountLoginSelector selector = 2;
+  bool remote_refresh = 3;
 }
 
 message GetTwoFactorAuthStatusResponse {

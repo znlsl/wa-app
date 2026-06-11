@@ -110,24 +110,47 @@ func (r protocolProfileRow) toProto() *waappv1.ProtocolProfile {
 }
 
 type waAccountRow struct {
-	id          string
-	displayName string
-	e164        string
-	cc          string
-	national    string
-	iso2        string
-	status      string
-	createdAt   time.Time
-	updatedAt   time.Time
+	id                       string
+	displayName              string
+	e164                     string
+	cc                       string
+	national                 string
+	iso2                     string
+	status                   string
+	twoFactorConfigured      sql.NullBool
+	twoFactorEmailConfigured sql.NullBool
+	createdAt                time.Time
+	updatedAt                time.Time
 }
 
 func (r waAccountRow) toProto() *waappv1.WAAccount {
-	return newWAAccount(r.id, r.displayName, &waappv1.PhoneTarget{
+	account := newWAAccount(r.id, r.displayName, &waappv1.PhoneTarget{
 		E164Number:         r.e164,
 		CountryCallingCode: r.cc,
 		NationalNumber:     r.national,
 		CountryIso2:        r.iso2,
 	}, waappv1.WAAccountStatus(waappv1.WAAccountStatus_value[r.status]), audit(r.createdAt, r.updatedAt))
+	if r.twoFactorConfigured.Valid || r.twoFactorEmailConfigured.Valid {
+		account.TwoFactorAuth = &waappv1.TwoFactorAuthStatus{
+			Configured:      r.twoFactorConfigured.Bool,
+			EmailConfigured: r.twoFactorEmailConfigured.Bool,
+		}
+	}
+	return account
+}
+
+func nullableTwoFactorConfigured(status *waappv1.TwoFactorAuthStatus) sql.NullBool {
+	if status == nil {
+		return sql.NullBool{}
+	}
+	return sql.NullBool{Bool: status.GetConfigured(), Valid: true}
+}
+
+func nullableTwoFactorEmailConfigured(status *waappv1.TwoFactorAuthStatus) sql.NullBool {
+	if status == nil {
+		return sql.NullBool{}
+	}
+	return sql.NullBool{Bool: status.GetEmailConfigured(), Valid: true}
 }
 
 type clientProfileRow struct {

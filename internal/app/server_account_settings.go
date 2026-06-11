@@ -20,16 +20,19 @@ func (s *Server) GetTwoFactorAuthStatus(ctx context.Context, req *waappv1.GetTwo
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.GetTwoFactorAuthStatusResponse{Error: ToProtoError(err)}, nil
 	}
-	result, err := s.queryAccountSettings(ctx, req.GetContext(), req.GetSelector(), waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_TWO_FACTOR_AUTH_STATUS_GET)
+	if !req.GetRemoteRefresh() {
+		status, err := s.cachedTwoFactorAuthStatus(ctx, req.GetSelector())
+		if err != nil {
+			return &waappv1.GetTwoFactorAuthStatusResponse{Error: ToProtoError(err)}, nil
+		}
+		return &waappv1.GetTwoFactorAuthStatusResponse{Status: status}, nil
+	}
+	status, appErr, err := s.refreshTwoFactorAuthStatus(ctx, req.GetContext(), req.GetSelector())
 	if err != nil {
 		return &waappv1.GetTwoFactorAuthStatusResponse{Error: ToProtoError(err)}, nil
 	}
-	if result.Err != nil {
-		return &waappv1.GetTwoFactorAuthStatusResponse{Error: ToProtoError(result.Err)}, nil
-	}
-	status := result.TwoFactorStatus
-	if status == nil {
-		status = &waappv1.TwoFactorAuthStatus{}
+	if appErr != nil {
+		return &waappv1.GetTwoFactorAuthStatusResponse{Error: appErr}, nil
 	}
 	return &waappv1.GetTwoFactorAuthStatusResponse{Status: status}, nil
 }
@@ -53,6 +56,13 @@ func (s *Server) SetTwoFactorAuthSettings(ctx context.Context, req *waappv1.SetT
 	if err != nil {
 		return &waappv1.SetTwoFactorAuthSettingsResponse{Error: ToProtoError(err)}, nil
 	}
+	if op.GetError() == nil {
+		if err := s.patchTwoFactorAuthStatus(ctx, op.GetWaAccountId(), accountSettingsCompletedAt(op, s.clock.Now()), func(status *waappv1.TwoFactorAuthStatus) {
+			status.Configured = true
+		}); err != nil {
+			return &waappv1.SetTwoFactorAuthSettingsResponse{Operation: op, Error: ToProtoError(err)}, nil
+		}
+	}
 	return &waappv1.SetTwoFactorAuthSettingsResponse{Operation: op, Error: op.GetError()}, nil
 }
 
@@ -75,6 +85,13 @@ func (s *Server) SetAccountEmail(ctx context.Context, req *waappv1.SetAccountEma
 	})
 	if err != nil {
 		return &waappv1.SetAccountEmailResponse{Error: ToProtoError(err)}, nil
+	}
+	if op.GetError() == nil && op.GetStatus() == waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_VERIFIED {
+		if err := s.patchTwoFactorAuthStatus(ctx, op.GetWaAccountId(), accountSettingsCompletedAt(op, s.clock.Now()), func(status *waappv1.TwoFactorAuthStatus) {
+			status.EmailConfigured = true
+		}); err != nil {
+			return &waappv1.SetAccountEmailResponse{Operation: op, Error: ToProtoError(err)}, nil
+		}
 	}
 	return &waappv1.SetAccountEmailResponse{Operation: op, Error: op.GetError()}, nil
 }
@@ -112,6 +129,13 @@ func (s *Server) VerifyAccountEmailOtp(ctx context.Context, req *waappv1.VerifyA
 	})
 	if err != nil {
 		return &waappv1.VerifyAccountEmailOtpResponse{Error: ToProtoError(err)}, nil
+	}
+	if op.GetError() == nil && op.GetStatus() == waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_VERIFIED {
+		if err := s.patchTwoFactorAuthStatus(ctx, op.GetWaAccountId(), accountSettingsCompletedAt(op, s.clock.Now()), func(status *waappv1.TwoFactorAuthStatus) {
+			status.EmailConfigured = true
+		}); err != nil {
+			return &waappv1.VerifyAccountEmailOtpResponse{Operation: op, Error: ToProtoError(err)}, nil
+		}
 	}
 	return &waappv1.VerifyAccountEmailOtpResponse{Operation: op, Error: op.GetError()}, nil
 }
@@ -219,23 +243,86 @@ func (s *Server) applyAccountSettingsResult(ctx context.Context, requestContext 
 	return op, result, nil
 }
 
-func (s *Server) queryAccountSettings(ctx context.Context, requestContext *waappv1.RequestContext, selector *waappv1.AccountLoginSelector, kind waappv1.AccountSettingsOperationKind) (EngineAccountSettingsResult, error) {
+func (s *Server) refreshTwoFactorAuthStatus(ctx context.Context, requestContext *waappv1.RequestContext, selector *waappv1.AccountLoginSelector) (*waappv1.TwoFactorAuthStatus, *waappv1.WaError, error) {
 	loginState, err := s.accountSettingsLoginState(ctx, selector)
 	if err != nil {
-		return EngineAccountSettingsResult{}, err
+		return nil, nil, err
 	}
-	runner, release, err := s.accountSettingsRunner(ctx, requestContext, loginState, kind)
+	runner, release, err := s.accountSettingsRunner(ctx, requestContext, loginState, waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_TWO_FACTOR_AUTH_STATUS_GET)
 	if err != nil {
-		return EngineAccountSettingsResult{}, err
+		return nil, nil, err
 	}
 	defer release()
-	return runner.ApplyAccountSettings(ctx, EngineAccountSettingsInput{
+	result := runner.ApplyAccountSettings(ctx, EngineAccountSettingsInput{
 		WAAccountID:          loginState.GetWaAccountId(),
 		ClientProfileID:      loginState.GetClientProfileId(),
 		RegisteredIdentityID: loginState.GetRegisteredIdentityId(),
 		LoginStateID:         loginState.GetLoginStateId(),
-		Kind:                 kind,
-	}), nil
+		Kind:                 waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_TWO_FACTOR_AUTH_STATUS_GET,
+	})
+	if result.Err != nil {
+		return nil, ToProtoError(result.Err), nil
+	}
+	status := cloneTwoFactorAuthStatus(result.TwoFactorStatus)
+	if status == nil {
+		status = &waappv1.TwoFactorAuthStatus{}
+	}
+	if err := s.saveTwoFactorAuthStatus(ctx, loginState.GetWaAccountId(), status, s.clock.Now()); err != nil {
+		return nil, nil, err
+	}
+	return status, nil, nil
+}
+
+func (s *Server) cachedTwoFactorAuthStatus(ctx context.Context, selector *waappv1.AccountLoginSelector) (*waappv1.TwoFactorAuthStatus, error) {
+	accountID, err := s.accountSettingsAccountID(ctx, selector)
+	if err != nil {
+		return nil, err
+	}
+	account, err := s.getWAAccount(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	return cloneTwoFactorAuthStatus(account.GetTwoFactorAuth()), nil
+}
+
+func (s *Server) patchTwoFactorAuthStatus(ctx context.Context, accountID string, updatedAt time.Time, patch func(*waappv1.TwoFactorAuthStatus)) error {
+	account, err := s.getWAAccount(ctx, accountID)
+	if err != nil {
+		return err
+	}
+	status := cloneTwoFactorAuthStatus(account.GetTwoFactorAuth())
+	if status == nil {
+		status = &waappv1.TwoFactorAuthStatus{}
+	}
+	patch(status)
+	return s.saveTwoFactorAuthStatusForAccount(ctx, account, status, updatedAt)
+}
+
+func (s *Server) saveTwoFactorAuthStatus(ctx context.Context, accountID string, status *waappv1.TwoFactorAuthStatus, updatedAt time.Time) error {
+	account, err := s.getWAAccount(ctx, accountID)
+	if err != nil {
+		return err
+	}
+	return s.saveTwoFactorAuthStatusForAccount(ctx, account, status, updatedAt)
+}
+
+func (s *Server) saveTwoFactorAuthStatusForAccount(ctx context.Context, account *waappv1.WAAccount, status *waappv1.TwoFactorAuthStatus, updatedAt time.Time) error {
+	if updatedAt.IsZero() {
+		updatedAt = s.clock.Now()
+	}
+	_, err := s.saveWAAccount(ctx, withWAAccountTwoFactorAuthStatus(account, status, updatedAt))
+	return err
+}
+
+func (s *Server) accountSettingsAccountID(ctx context.Context, selector *waappv1.AccountLoginSelector) (string, error) {
+	if selector.GetWaAccountId() != "" {
+		return requireWAAccountID(selector.GetWaAccountId())
+	}
+	loginState, err := s.accountSettingsLoginState(ctx, selector)
+	if err != nil {
+		return "", err
+	}
+	return requireWAAccountID(loginState.GetWaAccountId())
 }
 
 func (s *Server) saveAccountDisplayName(ctx context.Context, accountID string, displayName string, updatedAt time.Time) error {

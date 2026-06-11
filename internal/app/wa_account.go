@@ -27,7 +27,9 @@ func withWAAccountStatus(account *waappv1.WAAccount, status waappv1.WAAccountSta
 	if createdAt.IsZero() {
 		createdAt = updatedAt
 	}
-	return newWAAccount(waAccountID(account), account.GetDisplayName(), account.GetPhone(), status, audit(createdAt, updatedAt))
+	next := newWAAccount(waAccountID(account), account.GetDisplayName(), account.GetPhone(), status, audit(createdAt, updatedAt))
+	next.TwoFactorAuth = cloneTwoFactorAuthStatus(account.GetTwoFactorAuth())
+	return next
 }
 
 func withWAAccountDisplayName(account *waappv1.WAAccount, displayName string, updatedAt time.Time) *waappv1.WAAccount {
@@ -35,7 +37,29 @@ func withWAAccountDisplayName(account *waappv1.WAAccount, displayName string, up
 	if createdAt.IsZero() {
 		createdAt = updatedAt
 	}
-	return newWAAccount(waAccountID(account), displayName, account.GetPhone(), waAccountStatus(account), audit(createdAt, updatedAt))
+	next := newWAAccount(waAccountID(account), displayName, account.GetPhone(), waAccountStatus(account), audit(createdAt, updatedAt))
+	next.TwoFactorAuth = cloneTwoFactorAuthStatus(account.GetTwoFactorAuth())
+	return next
+}
+
+func withWAAccountTwoFactorAuthStatus(account *waappv1.WAAccount, status *waappv1.TwoFactorAuthStatus, updatedAt time.Time) *waappv1.WAAccount {
+	createdAt := waAccountCreatedAt(account)
+	if createdAt.IsZero() {
+		createdAt = updatedAt
+	}
+	next := newWAAccount(waAccountID(account), account.GetDisplayName(), account.GetPhone(), waAccountStatus(account), audit(createdAt, updatedAt))
+	next.TwoFactorAuth = cloneTwoFactorAuthStatus(status)
+	return next
+}
+
+func cloneTwoFactorAuthStatus(status *waappv1.TwoFactorAuthStatus) *waappv1.TwoFactorAuthStatus {
+	if status == nil {
+		return nil
+	}
+	return &waappv1.TwoFactorAuthStatus{
+		Configured:      status.GetConfigured(),
+		EmailConfigured: status.GetEmailConfigured(),
+	}
 }
 
 func waAccountID(account *waappv1.WAAccount) string {

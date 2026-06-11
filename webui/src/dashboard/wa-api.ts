@@ -106,10 +106,12 @@ export const probeWaPhoneSMS = (input: WaPhoneInput) => api<WaWorkflowResponse>(
 export const registerWaPhone = (input: WaPhoneInput) => api<WaWorkflowResponse>('/api/wa/register', { method: 'POST', body: JSON.stringify(input) });
 export const checkWaLoginState = (input: { login_state_id?: string; registered_identity_id?: string; wa_account_id?: string; client_profile_id?: string; remote_timeout_seconds?: number }) => api<WaWorkflowResponse>('/api/wa/login-state-check', { method: 'POST', body: JSON.stringify(input) });
 
-export async function getWaTwoFactorAuthStatus(account: WAAccount) {
+export async function getWaTwoFactorAuthStatus(account: WAAccount, input: { remoteRefresh?: boolean } = {}) {
   const accountID = waAccountID(account);
   if (!accountID) throw new Error('wa_account_id is required');
-  return requireAccountSettingsResponse(await api<GetTwoFactorAuthStatusResponse>(`/api/wa/account-settings/2fa/status?${new URLSearchParams({ wa_account_id: accountID })}`));
+  const params = new URLSearchParams({ wa_account_id: accountID });
+  if (input.remoteRefresh) params.set('remote_refresh', 'true');
+  return requireAccountSettingsResponse(await api<GetTwoFactorAuthStatusResponse>(`/api/wa/account-settings/2fa/status?${params}`));
 }
 
 export function submitWaRegistrationOTP(account: WAAccount | string, otp: string) {

@@ -15,9 +15,11 @@ func (s *dashboardHTTP) handleGetTwoFactorAuthStatus(w http.ResponseWriter, r *h
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "wa-app service is not configured"})
 		return
 	}
+	payload := queryPayload(r)
 	resp, err := s.service.GetTwoFactorAuthStatus(r.Context(), &waappv1.GetTwoFactorAuthStatusRequest{
-		Context:  &waappv1.RequestContext{RequestId: newRequestID("wa-account-2fa-status")},
-		Selector: accountSettingsSelector(queryPayload(r)),
+		Context:       &waappv1.RequestContext{RequestId: newRequestID("wa-account-2fa-status")},
+		Selector:      accountSettingsSelector(payload),
+		RemoteRefresh: boolField(payload, "remote_refresh"),
 	})
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "get WA 2FA status failed"})

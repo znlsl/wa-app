@@ -28,11 +28,15 @@ CREATE TABLE IF NOT EXISTS wa_accounts (
   national_number TEXT NOT NULL DEFAULT '',
   country_iso2 TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL,
+  two_factor_auth_configured BOOLEAN,
+  two_factor_email_configured BOOLEAN,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 ALTER TABLE wa_accounts ADD COLUMN IF NOT EXISTS display_name TEXT NOT NULL DEFAULT '';
+ALTER TABLE wa_accounts ADD COLUMN IF NOT EXISTS two_factor_auth_configured BOOLEAN;
+ALTER TABLE wa_accounts ADD COLUMN IF NOT EXISTS two_factor_email_configured BOOLEAN;
 
 CREATE TABLE IF NOT EXISTS wa_client_profiles (
   client_profile_id TEXT PRIMARY KEY,
