@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"errors"
 	"net/mail"
 	"strings"
 	"time"
@@ -14,10 +13,7 @@ import (
 )
 
 const (
-	accountProfileNameMaxRunes                = 25
-	accountSettingsAppStateRefreshMaxMessages = 12
-	accountSettingsAppStatePendingLimit       = 24
-	accountSettingsAppStateRefreshWait        = 4 * time.Second
+	accountProfileNameMaxRunes = 25
 )
 
 func (s *Server) GetTwoFactorAuthStatus(ctx context.Context, req *waappv1.GetTwoFactorAuthStatusRequest) (*waappv1.GetTwoFactorAuthStatusResponse, error) {
@@ -200,10 +196,6 @@ func (s *Server) applyAccountSettingsResult(ctx context.Context, requestContext 
 	}
 	defer release()
 	result := runner.ApplyAccountSettings(ctx, input)
-	if accountSettingsNeedsAppStateRefresh(kind, result.Err) {
-		_ = s.refreshAccountSettingsAppStateKeys(ctx, requestContext, loginState, runner)
-		result = runner.ApplyAccountSettings(ctx, input)
-	}
 	completedAt := s.clock.Now()
 	op := &waappv1.AccountSettingsOperation{
 		AccountSettingsOperationId: s.ids.NewID("waacctset_"),
@@ -220,124 +212,6 @@ func (s *Server) applyAccountSettingsResult(ctx context.Context, requestContext 
 		op.WaitTime = durationpb.New(result.WaitTime)
 	}
 	return op, result, nil
-}
-
-func accountSettingsNeedsAppStateRefresh(kind waappv1.AccountSettingsOperationKind, err error) bool {
-	if kind != waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_ACCOUNT_PROFILE_NAME_SET {
-		return false
-	}
-	var appErr *AppError
-	if !errors.As(err, &appErr) {
-		return false
-	}
-	if appErr.Code != waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT {
-		return false
-	}
-	return appErr.Message == waAppStateKeyUnavailable ||
-		appErr.Message == "WA app-state key id is invalid" ||
-		appErr.Message == "WA app-state key data is invalid" ||
-		appErr.Message == "WA app-state mutation key is invalid"
-}
-
-func (s *Server) refreshAccountSettingsAppStateKeys(ctx context.Context, requestContext *waappv1.RequestContext, loginState *waappv1.LoginState, runner ProtocolEngine) error {
-	if runner == nil {
-		runner = s.runner
-	}
-	if err := s.decryptAccountSettingsPendingAppStateMessages(ctx, loginState, runner); err != nil {
-		return err
-	}
-	if s.nativeAppStateKeyAvailable(ctx, loginState.GetClientProfileId()) {
-		return nil
-	}
-	session, err := s.openAccountSettingsRefreshSession(ctx, requestContext, loginState)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		_, _ = s.CloseMessageSession(context.WithoutCancel(ctx), &waappv1.CloseMessageSessionRequest{
-			Context:          &waappv1.RequestContext{RequestId: s.ids.NewID("wa-close_"), CorrelationId: firstNonEmpty(requestContext.GetCorrelationId(), requestContext.GetRequestId())},
-			MessageSessionId: session.GetMessageSessionId(),
-			Reason:           "account settings app-state refresh",
-		})
-	}()
-	resp, err := s.receiveMessageBatch(ctx, &waappv1.ReceiveMessageBatchRequest{
-		Context:          &waappv1.RequestContext{RequestId: s.ids.NewID("wa-sync_"), CorrelationId: firstNonEmpty(requestContext.GetCorrelationId(), requestContext.GetRequestId())},
-		MessageSessionId: session.GetMessageSessionId(),
-		WaitTimeout:      durationpb.New(accountSettingsAppStateRefreshWait),
-		MaxMessages:      accountSettingsAppStateRefreshMaxMessages,
-	}, runner)
-	if err != nil {
-		return err
-	}
-	if resp.GetError() != nil {
-		return errorFromProto(resp.GetError())
-	}
-	s.decryptAccountSettingsAppStateMessages(ctx, session, resp.GetMessages(), runner)
-	if s.nativeAppStateKeyAvailable(ctx, loginState.GetClientProfileId()) {
-		return nil
-	}
-	return s.decryptAccountSettingsPendingAppStateMessages(ctx, loginState, runner)
-}
-
-func (s *Server) openAccountSettingsRefreshSession(ctx context.Context, requestContext *waappv1.RequestContext, loginState *waappv1.LoginState) (*waappv1.MessageSession, error) {
-	resp, err := s.OpenMessageSession(ctx, &waappv1.OpenMessageSessionRequest{
-		Context:              &waappv1.RequestContext{RequestId: s.ids.NewID("wa-open_"), CorrelationId: firstNonEmpty(requestContext.GetCorrelationId(), requestContext.GetRequestId())},
-		WaAccountId:          loginState.GetWaAccountId(),
-		ClientProfileId:      loginState.GetClientProfileId(),
-		RegisteredIdentityId: loginState.GetRegisteredIdentityId(),
-	})
-	if err != nil {
-		return nil, err
-	}
-	if resp.GetError() != nil {
-		return nil, errorFromProto(resp.GetError())
-	}
-	if resp.GetSession() == nil {
-		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "message session is not available", true)
-	}
-	return resp.GetSession(), nil
-}
-
-func (s *Server) decryptAccountSettingsPendingAppStateMessages(ctx context.Context, loginState *waappv1.LoginState, runner ProtocolEngine) error {
-	messages, err := s.store.ListPendingEncryptedInboundMessages(ctx, loginState.GetWaAccountId(), loginState.GetClientProfileId(), accountSettingsAppStatePendingLimit)
-	if err != nil {
-		return err
-	}
-	session := &waappv1.MessageSession{
-		WaAccountId:          loginState.GetWaAccountId(),
-		ClientProfileId:      loginState.GetClientProfileId(),
-		RegisteredIdentityId: loginState.GetRegisteredIdentityId(),
-	}
-	s.decryptAccountSettingsAppStateMessages(ctx, session, messages, runner)
-	return nil
-}
-
-func (s *Server) decryptAccountSettingsAppStateMessages(ctx context.Context, session *waappv1.MessageSession, messages []*waappv1.InboundMessage, runner ProtocolEngine) {
-	for _, msg := range messages {
-		if msg.GetEncryptionState() != waappv1.MessageEncryptionState_MESSAGE_ENCRYPTION_STATE_ENCRYPTED {
-			continue
-		}
-		result := runner.DecryptMessage(ctx, EngineDecryptInput{
-			MessageID:            msg.GetMessageId(),
-			MessageSessionID:     session.GetMessageSessionId(),
-			ClientProfileID:      session.GetClientProfileId(),
-			PayloadRef:           msg.GetPayloadRef(),
-			SessionCommitPolicy:  waappv1.SessionCommitPolicy_SESSION_COMMIT_POLICY_COMMIT_LEARNED_STATE,
-			IncludePlaintextText: false,
-		})
-		if result.Err == nil && s.nativeAppStateKeyAvailable(ctx, session.GetClientProfileId()) {
-			return
-		}
-	}
-}
-
-func (s *Server) nativeAppStateKeyAvailable(ctx context.Context, clientProfileID string) bool {
-	state, err := s.store.GetNativeState(ctx, clientProfileID)
-	if err != nil {
-		return false
-	}
-	_, _, err = selectedNativeAppStateKey(&state)
-	return err == nil
 }
 
 func (s *Server) queryAccountSettings(ctx context.Context, requestContext *waappv1.RequestContext, selector *waappv1.AccountLoginSelector, kind waappv1.AccountSettingsOperationKind) (EngineAccountSettingsResult, error) {

@@ -27,6 +27,7 @@ type nativeState struct {
 	Phone           string                          `json:"phone"`
 	AuthKey         string                          `json:"authkey"`
 	UserAgent       string                          `json:"user_agent"`
+	PushName        string                          `json:"push_name,omitempty"`
 	Profile         nativePhoneProfile              `json:"profile"`
 	KeyBundle       nativeKeyBundle                 `json:"key_bundle"`
 	LastCodeParams  map[string]string               `json:"last_code_params,omitempty"`

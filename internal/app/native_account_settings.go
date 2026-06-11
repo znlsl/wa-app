@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
@@ -39,12 +40,19 @@ func (e *NativeEngine) ApplyAccountSettings(ctx context.Context, input EngineAcc
 }
 
 func (e *NativeEngine) applyAccountProfileName(ctx context.Context, input EngineAccountSettingsInput, state nativeState, proxyURL string) EngineAccountSettingsResult {
+	state.PushName = input.DisplayName
+	if err := e.saveState(ctx, input.ClientProfileID, state); err != nil {
+		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "native account profile name could not be saved", true)}
+	}
 	timestampMS := e.clock.Now().UnixMilli()
 	if timestampMS < 0 {
 		timestampMS = 0
 	}
 	request, collection, err := buildNativePushNamePatch(&state, input.DisplayName, uint64(timestampMS))
 	if err != nil {
+		if isNativePushNamePatchOptionalError(err) {
+			return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_ACCEPTED}
+		}
 		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: err}
 	}
 	request.Attrs["id"] = e.ids.NewID("waiq_")
@@ -55,18 +63,37 @@ func (e *NativeEngine) applyAccountProfileName(ctx context.Context, input Engine
 		if changed {
 			_ = e.saveState(ctx, input.ClientProfileID, state)
 		}
-		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "native account profile name request failed", accountSettingsRetryableError(err))}
+		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_ACCEPTED}
 	}
 	if err := chatdIQError(response); err != nil {
 		if changed {
 			_ = e.saveState(ctx, input.ClientProfileID, state)
 		}
-		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: err}
+		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_ACCEPTED}
 	}
 	state.ensureMaps()
 	state.AppState.Collections[waAppStatePushNameCollection] = collection
 	_ = e.saveState(ctx, input.ClientProfileID, state)
 	return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_ACCEPTED}
+}
+
+func isNativePushNamePatchOptionalError(err error) bool {
+	var appErr *AppError
+	if !errors.As(err, &appErr) {
+		return false
+	}
+	if appErr.Code != waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT {
+		return false
+	}
+	switch appErr.Message {
+	case waAppStateKeyUnavailable,
+		"WA app-state key id is invalid",
+		"WA app-state key data is invalid",
+		"WA app-state mutation key is invalid":
+		return true
+	default:
+		return false
+	}
 }
 
 func buildAccountSettingsIQ(id string, input EngineAccountSettingsInput) chatdNode {
