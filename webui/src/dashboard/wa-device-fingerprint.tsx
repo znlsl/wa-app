@@ -31,8 +31,7 @@ function FingerprintGrid({ fingerprint }: { fingerprint: DeviceFingerprint }) {
   const rows: Array<{ label: string; value: string; icon: LucideIcon }> = [
     { label: '指纹 ID', value: fingerprint.fingerprint_id, icon: Fingerprint },
     { label: 'FDID', value: fingerprint.fdid, icon: Fingerprint },
-    { label: 'User-Agent', value: fingerprint.user_agent, icon: Smartphone },
-    { label: 'App / Android', value: [fingerprint.app_version, fingerprint.android_version].filter(Boolean).join(' / '), icon: Smartphone },
+    { label: 'Android', value: fingerprint.android_version, icon: Smartphone },
     { label: 'RAM / Radio', value: [ramLabel(fingerprint.device_ram_gib), radioLabel(fingerprint.network_radio_type)].filter(Boolean).join(' / '), icon: Cpu },
     { label: 'MCC/MNC', value: pairLabel(fingerprint.mcc, fingerprint.mnc), icon: Smartphone },
     { label: 'SIM MCC/MNC', value: pairLabel(fingerprint.sim_mcc, fingerprint.sim_mnc), icon: Smartphone },

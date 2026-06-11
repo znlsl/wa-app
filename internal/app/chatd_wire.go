@@ -9,7 +9,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"regexp"
 	"strings"
 	"time"
 
@@ -21,10 +20,7 @@ const (
 	waRoutingPrefix = "ED\x00\x01"
 )
 
-var (
-	noiseXXName                 = []byte("Noise_XX_25519_AESGCM_SHA256")
-	chatdUserAgentHeaderPattern = regexp.MustCompile(`^WhatsApp/([0-9.]+)\s+Android/([^ ]+)\s+Device/([^- \t/]+)-([^/\s]+)$`)
-)
+var noiseXXName = []byte("Noise_XX_25519_AESGCM_SHA256")
 
 type chatdError struct{ message string }
 
@@ -601,10 +597,10 @@ func loginPayload(identity loginIdentity, state nativeState, version string, pas
 
 func chatdUserAgentForState(state nativeState, version string) userAgentConfig {
 	cfg := userAgentConfig{
-		version:       firstNonEmpty(version, defaultWAAppVersion),
-		osVersion:     "13",
-		manufacturer:  "samsung",
-		device:        "SM-G991B",
+		version:       nativeAppVersion(version),
+		osVersion:     firstNonEmpty(state.Profile.AndroidVersion, "13"),
+		manufacturer:  firstNonEmpty(state.Profile.DeviceVendor, "samsung"),
+		device:        firstNonEmpty(state.Profile.DeviceModel, "SM-G991B"),
 		osBuildNumber: "TP1A.220624.014",
 		phoneID:       state.Profile.FDID,
 		localeLang:    "en",
@@ -612,12 +608,6 @@ func chatdUserAgentForState(state nativeState, version string) userAgentConfig {
 		deviceBoard:   "lahaina",
 		deviceExpID:   firstNonEmpty(state.Profile.ExpIDUUID, state.Profile.ExpID),
 		modelType:     "phone",
-	}
-	if match := chatdUserAgentHeaderPattern.FindStringSubmatch(firstNonEmpty(state.UserAgent, state.Profile.UserAgent)); len(match) == 5 {
-		cfg.version = match[1]
-		cfg.osVersion = match[2]
-		cfg.manufacturer = match[3]
-		cfg.device = match[4]
 	}
 	if state.Profile.AdditionalMapFields != nil {
 		cfg.mcc = state.Profile.AdditionalMapFields["mcc"]

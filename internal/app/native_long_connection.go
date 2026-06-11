@@ -439,7 +439,7 @@ func (e *longConnectionNativeEngine) openSessionWithEngine(ctx context.Context, 
 	cfg := chatdConfigForState(proxyURL, state, longConnectionChatdAttemptTimeout)
 	cfg.Endpoints = longConnectionChatdEndpoints(state)
 	client := newChatdClient(cfg)
-	session, err := client.openSession(ctx, state, input.RegisteredIdentityID, defaultLoginPayload, defaultWAAppVersion)
+	session, err := client.openSession(ctx, state, input.RegisteredIdentityID, defaultLoginPayload, input.AppVersion)
 	if err != nil {
 		return nil, err
 	}

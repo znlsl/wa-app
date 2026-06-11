@@ -50,6 +50,7 @@ func (s *Server) SendTextMessage(ctx context.Context, req *waappv1.SendTextMessa
 		WAAccountID:          accountID,
 		ClientProfileID:      loginState.GetClientProfileId(),
 		RegisteredIdentityID: loginState.GetRegisteredIdentityId(),
+		AppVersion:           s.loginStateAppVersion(ctx, loginState),
 		ContactJID:           contactJID,
 		Text:                 text,
 		ClientMessageID:      providerID,

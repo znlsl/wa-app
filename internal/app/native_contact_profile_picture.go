@@ -88,7 +88,7 @@ func (e *NativeEngine) resolveContactProfilePictureWithSender(ctx context.Contex
 			contentType, err := profilePictureContentType(location.InlineData, "")
 			return EngineContactProfilePictureResult{ProfilePictureID: location.ID, ContentType: contentType, Data: location.InlineData, Err: err}
 		}
-		data, contentType, downloadErr := e.downloadContactProfilePicture(operationCtx, location, state.UserAgent)
+		data, contentType, downloadErr := e.downloadContactProfilePicture(operationCtx, location, nativeUserAgentForState(state, input.AppVersion))
 		if downloadErr == nil {
 			return EngineContactProfilePictureResult{ProfilePictureID: location.ID, ContentType: contentType, Data: data}
 		}
@@ -116,7 +116,7 @@ func (e *NativeEngine) contactProfilePictureLocationsFromProfileIQ(ctx context.C
 			for _, pictureID := range contactProfilePictureRequestIDs(input.ContactPictureID) {
 				trustedContactToken := trustedContactTokenForProfilePicture(state, target, e.clock.Now())
 				request := buildContactProfilePictureIQ(e.ids.NewID("wappic_"), target, pictureType, pictureID, trustedContactToken)
-				response, update, err := sender.sendIQ(ctx, state, input.RegisteredIdentityID, defaultWAAppVersion, request, "profile picture iq timed out")
+				response, update, err := sender.sendIQ(ctx, state, input.RegisteredIdentityID, input.AppVersion, request, "profile picture iq timed out")
 				lastUpdate = mergeContactProfilePictureUpdate(lastUpdate, update)
 				applyChatdSessionUpdateState(&state, update)
 				if err != nil {

@@ -36,7 +36,7 @@ func (e *NativeEngine) applyAccountSettingsWithSender(ctx context.Context, input
 	if request.Tag == "" {
 		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "account settings operation is not supported", false)}
 	}
-	response, update, err := sender.sendIQ(ctx, state, input.RegisteredIdentityID, defaultWAAppVersion, request, accountSettingsIQTimeoutMessage)
+	response, update, err := sender.sendIQ(ctx, state, input.RegisteredIdentityID, input.AppVersion, request, accountSettingsIQTimeoutMessage)
 	if applyChatdSessionUpdateState(&state, update) {
 		_ = e.saveState(ctx, input.ClientProfileID, state)
 	}
@@ -63,7 +63,7 @@ func (e *NativeEngine) applyAccountProfileName(ctx context.Context, input Engine
 		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: err}
 	}
 	request.Attrs["id"] = e.ids.NewID("waiq_")
-	response, update, err := sender.sendIQ(ctx, state, input.RegisteredIdentityID, defaultWAAppVersion, request, accountSettingsIQTimeoutMessage)
+	response, update, err := sender.sendIQ(ctx, state, input.RegisteredIdentityID, input.AppVersion, request, accountSettingsIQTimeoutMessage)
 	changed := applyChatdSessionUpdateState(&state, update)
 	if err != nil {
 		if changed {

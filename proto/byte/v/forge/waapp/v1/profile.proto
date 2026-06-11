@@ -71,9 +71,9 @@ message ClientProfile {
 }
 
 message DeviceFingerprint {
+  reserved 2, 3;
+
   string fingerprint_id = 1;
-  string user_agent = 2;
-  string app_version = 3;
   string device_vendor = 4;
   string device_model = 5;
   string android_version = 6;

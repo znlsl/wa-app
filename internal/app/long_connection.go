@@ -604,6 +604,7 @@ func (s *Server) longConnectionRunner(ctx context.Context, loginState *waappv1.L
 		return s.runner, nil
 	}
 	input := longConnectionEngineInput(session)
+	input.AppVersion = s.protocolIDAppVersion(ctx, input.ProtocolProfileID)
 	if strings.TrimSpace(engine.activeProxyURL) != "" {
 		return newLongConnectionNativeEngine(engine, longConnectionNativeEngineOptions{Input: input}), nil
 	}

@@ -220,6 +220,7 @@ func (s *Server) applyAccountSettingsResult(ctx context.Context, requestContext 
 		ClientProfileID:      loginState.GetClientProfileId(),
 		RegisteredIdentityID: loginState.GetRegisteredIdentityId(),
 		LoginStateID:         loginState.GetLoginStateId(),
+		AppVersion:           s.loginStateAppVersion(operationCtx, loginState),
 		Kind:                 kind,
 	}
 	if enrich != nil {
@@ -266,6 +267,7 @@ func (s *Server) refreshTwoFactorAuthStatus(ctx context.Context, requestContext 
 		ClientProfileID:      loginState.GetClientProfileId(),
 		RegisteredIdentityID: loginState.GetRegisteredIdentityId(),
 		LoginStateID:         loginState.GetLoginStateId(),
+		AppVersion:           s.loginStateAppVersion(operationCtx, loginState),
 		Kind:                 waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_TWO_FACTOR_AUTH_STATUS_GET,
 	})
 	if result.Err != nil {

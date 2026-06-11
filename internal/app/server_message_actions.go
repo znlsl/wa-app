@@ -208,6 +208,7 @@ func (s *Server) sendReadReceipts(ctx context.Context, requestContext *waappv1.R
 		WAAccountID:          accountID,
 		ClientProfileID:      loginState.GetClientProfileId(),
 		RegisteredIdentityID: loginState.GetRegisteredIdentityId(),
+		AppVersion:           s.loginStateAppVersion(ctx, loginState),
 		Messages:             receipts,
 		RemoteTimeout:        defaultMessageReadReceiptTimeout,
 	})

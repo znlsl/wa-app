@@ -16,7 +16,7 @@ func (s *Server) ProbeAccount(ctx context.Context, req *waappv1.ProbeAccountRequ
 	if err != nil {
 		return &waappv1.ProbeAccountResponse{Error: ToProtoError(err)}, nil
 	}
-	result := s.runner.ProbeAccount(ctx, EngineRegistrationInput{WAAccountID: waAccountID(account), ClientProfileID: profile.GetClientProfileId(), ProtocolProfileID: req.GetProtocolProfileId(), Phone: account.GetPhone(), DeliveryMethod: waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS})
+	result := s.runner.ProbeAccount(ctx, EngineRegistrationInput{WAAccountID: waAccountID(account), ClientProfileID: profile.GetClientProfileId(), ProtocolProfileID: profile.GetProtocolProfileId(), AppVersion: s.clientProfileAppVersion(ctx, profile), Phone: account.GetPhone(), DeliveryMethod: waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS})
 	now := s.clock.Now()
 	probe := &waappv1.AccountProbe{AccountProbeId: s.ids.NewID("waprobe_"), WaAccountId: waAccountID(account), ClientProfileId: profile.GetClientProfileId(), Status: result.Status, SupportedMethods: result.SupportedMethods, ProbedAt: timestamppb.New(now), LastError: ToProtoError(result.Err)}
 	if err := s.store.SaveAccountProbe(ctx, probe); err != nil {
@@ -41,7 +41,7 @@ func (s *Server) requestVerificationCode(ctx context.Context, req *waappv1.Reque
 	if method == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_UNSPECIFIED {
 		method = waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS
 	}
-	result := runner.RequestVerificationCode(ctx, EngineRegistrationInput{WAAccountID: waAccountID(account), ClientProfileID: profile.GetClientProfileId(), ProtocolProfileID: req.GetProtocolProfileId(), Phone: account.GetPhone(), DeliveryMethod: method})
+	result := runner.RequestVerificationCode(ctx, EngineRegistrationInput{WAAccountID: waAccountID(account), ClientProfileID: profile.GetClientProfileId(), ProtocolProfileID: profile.GetProtocolProfileId(), AppVersion: s.clientProfileAppVersion(ctx, profile), Phone: account.GetPhone(), DeliveryMethod: method})
 	record := s.newVerificationCodeRequestRecord(account, profile, method, result)
 	if err := s.store.SaveVerificationRequest(ctx, record); err != nil {
 		return &waappv1.RequestVerificationCodeResponse{Error: ToProtoError(err)}, nil
@@ -67,7 +67,7 @@ func (s *Server) submitVerificationCode(ctx context.Context, req *waappv1.Submit
 	}
 	now := s.clock.Now()
 	registration := &waappv1.RegistrationRecord{RegistrationId: s.ids.NewID("wareg_"), VerificationRequestId: verification.GetVerificationRequestId(), WaAccountId: waAccountID(account), ClientProfileId: profile.GetClientProfileId(), Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_SUBMITTED, SubmittedAt: timestamppb.New(now)}
-	result := runner.SubmitVerificationCode(ctx, EngineSubmitInput{EngineRegistrationInput: EngineRegistrationInput{WAAccountID: waAccountID(account), ClientProfileID: profile.GetClientProfileId(), ProtocolProfileID: profile.GetProtocolProfileId(), Phone: account.GetPhone(), DeliveryMethod: verification.GetDeliveryMethod()}, VerificationRequestID: verification.GetVerificationRequestId(), Code: req.GetCode(), CodeSecretRef: req.GetCodeSecretRef()})
+	result := runner.SubmitVerificationCode(ctx, EngineSubmitInput{EngineRegistrationInput: EngineRegistrationInput{WAAccountID: waAccountID(account), ClientProfileID: profile.GetClientProfileId(), ProtocolProfileID: profile.GetProtocolProfileId(), AppVersion: s.clientProfileAppVersion(ctx, profile), Phone: account.GetPhone(), DeliveryMethod: verification.GetDeliveryMethod()}, VerificationRequestID: verification.GetVerificationRequestId(), Code: req.GetCode(), CodeSecretRef: req.GetCodeSecretRef()})
 	registration.Status = result.Status
 	registration.LastError = ToProtoError(result.Err)
 	if result.Status == waappv1.RegistrationStatus_REGISTRATION_STATUS_REGISTERED {
@@ -148,7 +148,7 @@ func (s *Server) checkLoginState(ctx context.Context, req *waappv1.CheckLoginSta
 	if err != nil {
 		return &waappv1.CheckLoginStateResponse{Error: ToProtoError(err)}, nil
 	}
-	result := runner.CheckLoginState(ctx, EngineLoginCheckInput{WAAccountID: loginState.GetWaAccountId(), ClientProfileID: loginState.GetClientProfileId(), RegisteredIdentityID: loginState.GetRegisteredIdentityId(), RemoteTimeout: durationFromProto(req.GetRemoteTimeout())})
+	result := runner.CheckLoginState(ctx, EngineLoginCheckInput{WAAccountID: loginState.GetWaAccountId(), ClientProfileID: loginState.GetClientProfileId(), RegisteredIdentityID: loginState.GetRegisteredIdentityId(), AppVersion: s.loginStateAppVersion(ctx, loginState), RemoteTimeout: durationFromProto(req.GetRemoteTimeout())})
 	now := s.clock.Now()
 	check := &waappv1.LoginStateCheck{
 		LoginStateCheckId:    s.ids.NewID("walogchk_"),

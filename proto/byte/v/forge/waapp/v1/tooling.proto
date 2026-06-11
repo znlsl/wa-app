@@ -28,10 +28,11 @@ enum RegistrationRequestKind {
 }
 
 message PhoneFingerprintProfile {
+  reserved 4;
+
   string schema = 1;
   PhoneTarget phone = 2;
   string phone_sha256 = 3;
-  string user_agent = 4;
   map<string, string> base_params = 5;
   map<string, string> raw_params = 6;
   map<string, string> device_map_params = 7;
@@ -66,9 +67,10 @@ message WamsysCapture {
 }
 
 message GeneratePhoneFingerprintProfileRequest {
+  reserved 3;
+
   RequestContext context = 1;
   PhoneTarget phone = 2;
-  string app_version = 3;
 }
 
 message GeneratePhoneFingerprintProfileResponse {

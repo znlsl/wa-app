@@ -41,12 +41,12 @@ func (e *NativeEngine) SendTextMessage(ctx context.Context, input EngineTextMess
 	operationCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	client := newChatdClient(chatdConfigForState(proxyURL, state, timeout))
-	session, err := client.openSession(operationCtx, state, input.RegisteredIdentityID, defaultLoginPayload, defaultWAAppVersion)
+	session, err := client.openSession(operationCtx, state, input.RegisteredIdentityID, defaultLoginPayload, input.AppVersion)
 	if err != nil {
 		return EngineTextMessageResult{Err: chatdReceiveError(err)}
 	}
 	defer session.Close()
-	receiveInput := EngineMessageInput{WAAccountID: input.WAAccountID, ClientProfileID: input.ClientProfileID, RegisteredIdentityID: input.RegisteredIdentityID}
+	receiveInput := EngineMessageInput{WAAccountID: input.WAAccountID, ClientProfileID: input.ClientProfileID, RegisteredIdentityID: input.RegisteredIdentityID, AppVersion: input.AppVersion}
 	result := e.sendTextMessageOnSession(operationCtx, session, &state, input, receiveInput, timeout)
 	if err := e.applyTextMessageSendUpdate(operationCtx, input.ClientProfileID, &state, receiveInput, result.Items, result.Update); err != nil && result.Err == nil {
 		result.Err = err
@@ -125,6 +125,7 @@ func (e *longConnectionNativeEngine) textMessageReceiveInput(input EngineTextMes
 	messageInput.WAAccountID = firstNonEmpty(messageInput.WAAccountID, input.WAAccountID)
 	messageInput.ClientProfileID = firstNonEmpty(messageInput.ClientProfileID, input.ClientProfileID)
 	messageInput.RegisteredIdentityID = firstNonEmpty(messageInput.RegisteredIdentityID, input.RegisteredIdentityID)
+	messageInput.AppVersion = firstNonEmpty(messageInput.AppVersion, input.AppVersion)
 	return messageInput
 }
 

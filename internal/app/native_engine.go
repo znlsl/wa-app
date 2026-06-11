@@ -78,7 +78,7 @@ func (e *NativeEngine) CloseIdleConnections() {
 
 func (e *NativeEngine) PrepareClientProfile(ctx context.Context, input EngineProfileInput) error {
 	_ = ctx
-	state, err := newNativeState(input.Phone, defaultWAAppVersion)
+	state, err := newNativeState(input.Phone)
 	if err != nil {
 		return err
 	}
@@ -103,7 +103,7 @@ func (e *NativeEngine) probeAccountWithState(ctx context.Context, input EngineRe
 	if err != nil {
 		return EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}
 	}
-	data, _, err := client.postWASafe(ctx, defaultWAExistURL, plain, state.UserAgent)
+	data, _, err := client.postWASafe(ctx, defaultWAExistURL, plain, nativeUserAgentForState(state, input.AppVersion))
 	result := parseExistProbeResult(data)
 	if err != nil {
 		if result.Status == waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_UNKNOWN {
@@ -137,7 +137,7 @@ func (e *NativeEngine) requestVerificationCodeWithState(ctx context.Context, inp
 	if err != nil {
 		return EngineCodeResult{Status: waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_REJECTED, Err: err}, state
 	}
-	data, enc, err := client.postWASafe(ctx, defaultWACodeURL, plain, state.UserAgent)
+	data, enc, err := client.postWASafe(ctx, defaultWACodeURL, plain, nativeUserAgentForState(state, input.AppVersion))
 	state.LastCodeParams = params
 	state.LastCodeResult = sanitizeResponse(data)
 	if enc != "" {
@@ -177,7 +177,7 @@ func (e *NativeEngine) SubmitVerificationCode(ctx context.Context, input EngineS
 	if err != nil {
 		return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: err}
 	}
-	data, enc, err := client.postWASafe(ctx, defaultWARegisterURL, plain, state.UserAgent)
+	data, enc, err := client.postWASafe(ctx, defaultWARegisterURL, plain, nativeUserAgentForState(state, input.AppVersion))
 	state.LastRegister = sanitizeResponse(data)
 	if routingInfo := chatRoutingInfoFromValue(data["edge_routing_info"]); routingInfo != "" {
 		state.ChatRoutingInfo = routingInfo
@@ -217,7 +217,7 @@ func (e *NativeEngine) CheckLoginState(ctx context.Context, input EngineLoginChe
 		timeout = input.RemoteTimeout
 	}
 	client := newChatdClient(chatdConfigForState(proxyURL, state, timeout))
-	update, err := client.checkLoginState(ctx, state, input, defaultWAAppVersion)
+	update, err := client.checkLoginState(ctx, state, input, input.AppVersion)
 	if applyChatdSessionUpdateState(&state, update) {
 		_ = e.saveState(ctx, input.ClientProfileID, state)
 	}
@@ -261,7 +261,7 @@ func (e *NativeEngine) ReceiveMessageBatch(ctx context.Context, input EngineMess
 	}
 	client := newChatdClient(chatdConfigForState(proxyURL, state, 0))
 	now := e.clock.Now()
-	messages, payloads, update, err := client.receiveBatch(ctx, state, input, defaultWAAppVersion, now)
+	messages, payloads, update, err := client.receiveBatch(ctx, state, input, input.AppVersion, now)
 	if err != nil {
 		return EngineMessageBatchResult{Err: chatdReceiveError(err)}
 	}
@@ -672,11 +672,11 @@ func (e *NativeEngine) loadState(ctx context.Context, clientProfileID string) (n
 	if err != nil {
 		return nativeState{}, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_PROFILE_NOT_FOUND, "native client profile state not found", false)
 	}
-	return withNativeAppVersion(state, defaultWAAppVersion), nil
+	return state, nil
 }
 
 func (e *NativeEngine) newState(phone *waappv1.PhoneTarget) (nativeState, error) {
-	return newNativeState(phone, defaultWAAppVersion)
+	return newNativeState(phone)
 }
 
 func (e *NativeEngine) saveState(ctx context.Context, clientProfileID string, state nativeState) error {

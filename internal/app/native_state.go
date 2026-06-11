@@ -26,7 +26,6 @@ type nativeState struct {
 	CC              string                          `json:"cc"`
 	Phone           string                          `json:"phone"`
 	AuthKey         string                          `json:"authkey"`
-	UserAgent       string                          `json:"user_agent"`
 	PushName        string                          `json:"push_name,omitempty"`
 	Profile         nativePhoneProfile              `json:"profile"`
 	KeyBundle       nativeKeyBundle                 `json:"key_bundle"`
@@ -49,7 +48,9 @@ type nativePhoneProfile struct {
 	Schema              string            `json:"schema"`
 	CreatedAtUnix       int64             `json:"created_at_unix"`
 	PhoneSHA256         string            `json:"phone_sha256"`
-	UserAgent           string            `json:"user_agent"`
+	DeviceVendor        string            `json:"device_vendor"`
+	DeviceModel         string            `json:"device_model"`
+	AndroidVersion      string            `json:"android_version"`
 	FDID                string            `json:"fdid"`
 	ExpID               string            `json:"expid"`
 	ExpIDUUID           string            `json:"expid_uuid"`
@@ -213,7 +214,7 @@ func unmarshalNativeState(data []byte) (nativeState, error) {
 	return state, nil
 }
 
-func newNativeState(phone *waappv1.PhoneTarget, appVersion string) (nativeState, error) {
+func newNativeState(phone *waappv1.PhoneTarget) (nativeState, error) {
 	chatStatic, err := newNativeCurveKeyPair()
 	if err != nil {
 		return nativeState{}, err
@@ -255,14 +256,13 @@ func newNativeState(phone *waappv1.PhoneTarget, appVersion string) (nativeState,
 	if !verified {
 		return nativeState{}, fmt.Errorf("generated signed prekey signature did not verify")
 	}
-	profile := buildNativePhoneProfile(phone, appVersion)
+	profile := buildNativePhoneProfile(phone)
 	state := nativeState{
 		Schema:        nativeStateSchema,
 		CreatedAtUnix: time.Now().UTC().Unix(),
 		CC:            phoneCC(phone),
 		Phone:         phoneNational(phone),
 		AuthKey:       chatStatic.Public,
-		UserAgent:     firstNonEmpty(profile.UserAgent, nativeUserAgent(appVersion)),
 		Profile:       profile,
 		ChatStatic:    chatStatic,
 		Signal: nativeSignalState{
@@ -314,7 +314,7 @@ var nativeOperators = map[string][][2]string{
 
 var nativeRadioTypes = []string{"1", "2", "3", "9", "13", "20"}
 
-func buildNativePhoneProfile(phone *waappv1.PhoneTarget, appVersion string) nativePhoneProfile {
+func buildNativePhoneProfile(phone *waappv1.PhoneTarget) nativePhoneProfile {
 	seed := int64(binary.BigEndian.Uint64(randomBytes(8)))
 	rng := mrand.New(mrand.NewSource(seed))
 	model := nativeDeviceModels[rng.Intn(len(nativeDeviceModels))]
@@ -360,7 +360,9 @@ func buildNativePhoneProfile(phone *waappv1.PhoneTarget, appVersion string) nati
 		Schema:              "ctf-whatsapp-phone-profile/v1",
 		CreatedAtUnix:       time.Now().UTC().Unix(),
 		PhoneSHA256:         hex.EncodeToString(phoneHash[:]),
-		UserAgent:           fmt.Sprintf("WhatsApp/%s Android/%s Device/%s-%s", firstNonEmpty(appVersion, defaultWAAppVersion), model.Android, model.Vendor, model.Model),
+		DeviceVendor:        model.Vendor,
+		DeviceModel:         model.Model,
+		AndroidVersion:      model.Android,
 		FDID:                newUUIDString(),
 		ExpID:               expID,
 		ExpIDUUID:           expIDUUID,
@@ -372,35 +374,6 @@ func buildNativePhoneProfile(phone *waappv1.PhoneTarget, appVersion string) nati
 		BackupTokenHex:      hex.EncodeToString(backup),
 		AdditionalMapFields: additionalFields,
 	}
-}
-
-func withNativeAppVersion(state nativeState, appVersion string) nativeState {
-	if strings.TrimSpace(appVersion) == "" {
-		appVersion = defaultWAAppVersion
-	}
-	state.UserAgent = withNativeUserAgentVersion(state.UserAgent, appVersion)
-	state.Profile.UserAgent = withNativeUserAgentVersion(state.Profile.UserAgent, appVersion)
-	if state.UserAgent == "" {
-		state.UserAgent = firstNonEmpty(state.Profile.UserAgent, nativeUserAgent(appVersion))
-	}
-	if state.Profile.UserAgent == "" {
-		state.Profile.UserAgent = state.UserAgent
-	}
-	return state
-}
-
-func withNativeUserAgentVersion(userAgent string, appVersion string) string {
-	if strings.TrimSpace(userAgent) == "" {
-		return ""
-	}
-	parts := strings.SplitN(userAgent, " ", 2)
-	if len(parts) == 0 || !strings.HasPrefix(parts[0], "WhatsApp/") {
-		return userAgent
-	}
-	if len(parts) == 1 {
-		return "WhatsApp/" + appVersion
-	}
-	return "WhatsApp/" + appVersion + " " + parts[1]
 }
 
 func uuidPair() (string, string) {
@@ -531,10 +504,29 @@ func stableParamOrder(params map[string]string) []string {
 }
 
 func nativeUserAgent(appVersion string) string {
+	return nativeUserAgentForProfile(nativePhoneProfile{}, appVersion)
+}
+
+func nativeUserAgentForState(state nativeState, appVersion string) string {
+	return nativeUserAgentForProfile(state.Profile, appVersion)
+}
+
+func nativeUserAgentForProfile(profile nativePhoneProfile, appVersion string) string {
+	return "WhatsApp/" + nativeAppVersion(appVersion) + " " + nativeDeviceUserAgent(profile)
+}
+
+func nativeDeviceUserAgent(profile nativePhoneProfile) string {
+	vendor := firstNonEmpty(profile.DeviceVendor, "HUAWEI")
+	model := firstNonEmpty(profile.DeviceModel, "TRT-AL00A")
+	androidVersion := firstNonEmpty(profile.AndroidVersion, "7.0")
+	return "Android/" + androidVersion + " Device/" + vendor + "-" + model
+}
+
+func nativeAppVersion(appVersion string) string {
 	if strings.TrimSpace(appVersion) == "" {
-		appVersion = defaultWAAppVersion
+		return defaultWAAppVersion
 	}
-	return "WhatsApp/" + appVersion + " Android/7.0 Device/HUAWEI-TRT-AL00A"
+	return strings.TrimSpace(appVersion)
 }
 
 func parseJSONMap(text string) map[string]any {

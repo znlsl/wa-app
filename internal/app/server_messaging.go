@@ -71,7 +71,7 @@ func (s *Server) receiveMessageBatch(ctx context.Context, req *waappv1.ReceiveMe
 	if runner == nil {
 		runner = s.runner
 	}
-	result := runner.ReceiveMessageBatch(ctx, EngineMessageInput{WAAccountID: session.GetWaAccountId(), ClientProfileID: session.GetClientProfileId(), RegisteredIdentityID: session.GetRegisteredIdentityId(), ProtocolProfileID: session.GetProtocolProfileId(), MessageSessionID: session.GetMessageSessionId(), WaitTimeout: durationFromProto(req.GetWaitTimeout()), MaxMessages: int(req.GetMaxMessages())})
+	result := runner.ReceiveMessageBatch(ctx, EngineMessageInput{WAAccountID: session.GetWaAccountId(), ClientProfileID: session.GetClientProfileId(), RegisteredIdentityID: session.GetRegisteredIdentityId(), ProtocolProfileID: session.GetProtocolProfileId(), AppVersion: s.protocolIDAppVersion(ctx, session.GetProtocolProfileId()), MessageSessionID: session.GetMessageSessionId(), WaitTimeout: durationFromProto(req.GetWaitTimeout()), MaxMessages: int(req.GetMaxMessages())})
 	if result.Err != nil {
 		session.Status = waappv1.MessageSessionStatus_MESSAGE_SESSION_STATUS_FAILED
 		session.LastError = ToProtoError(result.Err)

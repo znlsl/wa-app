@@ -2,15 +2,12 @@ package app
 
 import (
 	"context"
-	"regexp"
 	"strings"
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
-
-var nativeUserAgentPattern = regexp.MustCompile(`^WhatsApp/([^ ]+) Android/([^ ]+) Device/([^- ]+)-(.+)$`)
 
 func (s *Server) attachClientProfileRuntime(ctx context.Context, profile *waappv1.ClientProfile) *waappv1.ClientProfile {
 	if profile == nil {
@@ -33,20 +30,29 @@ func (s *Server) attachClientProfilesRuntime(ctx context.Context, profiles []*wa
 
 func deviceFingerprintFromState(state nativeState) *waappv1.DeviceFingerprint {
 	profile := state.Profile
-	userAgent := firstNonEmpty(profile.UserAgent, state.UserAgent)
-	appVersion, androidVersion, vendor, model := parseNativeUserAgent(userAgent)
 	fields := profile.AdditionalMapFields
 	createdAt := profile.CreatedAtUnix
 	if createdAt == 0 {
 		createdAt = state.CreatedAtUnix
 	}
+	fingerprintSource := []string{
+		profile.FDID,
+		profile.PhoneSHA256,
+		profile.DeviceVendor,
+		profile.DeviceModel,
+		profile.AndroidVersion,
+		fields["device_ram"],
+		fields["mcc"],
+		fields["mnc"],
+		fields["sim_mcc"],
+		fields["sim_mnc"],
+		fields["network_radio_type"],
+	}
 	return &waappv1.DeviceFingerprint{
-		FingerprintId:     "wafp_" + stableID(strings.Join([]string{profile.FDID, userAgent, profile.PhoneSHA256}, ":")),
-		UserAgent:         userAgent,
-		AppVersion:        appVersion,
-		DeviceVendor:      vendor,
-		DeviceModel:       model,
-		AndroidVersion:    androidVersion,
+		FingerprintId:     "wafp_" + stableID(strings.Join(fingerprintSource, ":")),
+		DeviceVendor:      profile.DeviceVendor,
+		DeviceModel:       profile.DeviceModel,
+		AndroidVersion:    profile.AndroidVersion,
 		Fdid:              profile.FDID,
 		PhoneSha256Prefix: prefixRunes(profile.PhoneSHA256, 12),
 		DeviceRamGib:      fields["device_ram"],
@@ -57,14 +63,6 @@ func deviceFingerprintFromState(state nativeState) *waappv1.DeviceFingerprint {
 		NetworkRadioType:  fields["network_radio_type"],
 		CreatedAt:         unixTimestamp(createdAt),
 	}
-}
-
-func parseNativeUserAgent(userAgent string) (string, string, string, string) {
-	match := nativeUserAgentPattern.FindStringSubmatch(strings.TrimSpace(userAgent))
-	if len(match) != 5 {
-		return "", "", "", ""
-	}
-	return match[1], match[2], match[3], match[4]
 }
 
 func unixTimestamp(value int64) *timestamppb.Timestamp {

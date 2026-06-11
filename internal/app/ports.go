@@ -99,6 +99,7 @@ type EngineProfileInput struct {
 	WAAccountID       string
 	ClientProfileID   string
 	ProtocolProfileID string
+	AppVersion        string
 	Phone             *waappv1.PhoneTarget
 }
 
@@ -106,6 +107,7 @@ type EngineRegistrationInput struct {
 	WAAccountID       string
 	ClientProfileID   string
 	ProtocolProfileID string
+	AppVersion        string
 	Phone             *waappv1.PhoneTarget
 	DeliveryMethod    waappv1.VerificationDeliveryMethod
 }
@@ -121,6 +123,7 @@ type EngineLoginCheckInput struct {
 	WAAccountID          string
 	ClientProfileID      string
 	RegisteredIdentityID string
+	AppVersion           string
 	RemoteTimeout        time.Duration
 }
 
@@ -129,6 +132,7 @@ type EngineMessageInput struct {
 	ClientProfileID      string
 	RegisteredIdentityID string
 	ProtocolProfileID    string
+	AppVersion           string
 	MessageSessionID     string
 	WaitTimeout          time.Duration
 	MaxMessages          int
@@ -148,6 +152,7 @@ type EngineAccountSettingsInput struct {
 	ClientProfileID      string
 	RegisteredIdentityID string
 	LoginStateID         string
+	AppVersion           string
 	Kind                 waappv1.AccountSettingsOperationKind
 	Pin                  string
 	EmailAddress         string
@@ -163,6 +168,7 @@ type EngineContactResolveInput struct {
 	WAAccountID          string
 	ClientProfileID      string
 	RegisteredIdentityID string
+	AppVersion           string
 	JIDs                 []string
 	RemoteTimeout        time.Duration
 }
@@ -171,6 +177,7 @@ type EngineContactProfilePictureInput struct {
 	WAAccountID          string
 	ClientProfileID      string
 	RegisteredIdentityID string
+	AppVersion           string
 	ContactJID           string
 	ContactPNJID         string
 	ContactPictureID     string
@@ -237,6 +244,7 @@ type EngineMessageReadReceiptInput struct {
 	WAAccountID          string
 	ClientProfileID      string
 	RegisteredIdentityID string
+	AppVersion           string
 	Messages             []EngineMessageReadReceipt
 	RemoteTimeout        time.Duration
 }
@@ -256,6 +264,7 @@ type EngineTextMessageInput struct {
 	WAAccountID          string
 	ClientProfileID      string
 	RegisteredIdentityID string
+	AppVersion           string
 	ContactJID           string
 	Text                 string
 	ClientMessageID      string

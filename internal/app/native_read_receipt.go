@@ -30,7 +30,7 @@ func (e *NativeEngine) SendReadReceipts(ctx context.Context, input EngineMessage
 		timeout = defaultMessageReadReceiptTimeout
 	}
 	client := newChatdClient(chatdConfigForState(proxyURL, state, timeout))
-	session, err := client.openSession(ctx, state, input.RegisteredIdentityID, defaultLoginPayload, defaultWAAppVersion)
+	session, err := client.openSession(ctx, state, input.RegisteredIdentityID, defaultLoginPayload, input.AppVersion)
 	if err != nil {
 		return EngineMessageReadReceiptResult{Err: chatdReceiveError(err)}
 	}

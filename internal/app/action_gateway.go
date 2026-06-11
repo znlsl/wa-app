@@ -131,7 +131,6 @@ func fingerprintSummary(profile *waappv1.PhoneFingerprintProfile) map[string]any
 		"schema":         profile.GetSchema(),
 		"profile_sha256": profile.GetProfileSha256(),
 		"phone_sha256":   profile.GetPhoneSha256(),
-		"user_agent":     profile.GetUserAgent(),
 	}
 }
 
@@ -541,6 +540,10 @@ type nativeStateSaver interface {
 func (s *Server) ensureDefaultProtocolProfile(ctx context.Context) (*waappv1.ProtocolProfile, error) {
 	protocolID := "waproto_native"
 	if profile, err := s.store.GetProtocolProfile(ctx, protocolID); err == nil {
+		if strings.TrimSpace(profile.GetAppVersion()) == "" {
+			profile.AppVersion = defaultWAAppVersion
+			_ = s.store.SaveProtocolProfile(ctx, profile)
+		}
 		return profile, nil
 	}
 	now := s.clock.Now()
@@ -553,6 +556,7 @@ func (s *Server) ensureDefaultProtocolProfile(ctx context.Context) (*waappv1.Pro
 		ProtocolProfileId: protocolID,
 		AppArtifactId:     artifactID,
 		DisplayName:       "WA native protocol",
+		AppVersion:        defaultWAAppVersion,
 		Status:            waappv1.ProtocolProfileStatus_PROTOCOL_PROFILE_STATUS_ACTIVE,
 		Capabilities: []waappv1.ProtocolCapability{
 			waappv1.ProtocolCapability_PROTOCOL_CAPABILITY_ACCOUNT_PROBE,

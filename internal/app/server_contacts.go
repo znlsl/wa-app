@@ -67,6 +67,7 @@ func (s *Server) ResolveWAContacts(ctx context.Context, req *waappv1.ResolveWACo
 		WAAccountID:          accountID,
 		ClientProfileID:      loginState.GetClientProfileId(),
 		RegisteredIdentityID: loginState.GetRegisteredIdentityId(),
+		AppVersion:           s.loginStateAppVersion(ctx, loginState),
 		JIDs:                 jids,
 		RemoteTimeout:        defaultContactUsyncTimeout,
 	})

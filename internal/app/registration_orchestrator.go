@@ -44,11 +44,11 @@ func (s *Server) StartRegistration(ctx context.Context, payload map[string]any) 
 		}
 	}()
 	phone := normalizePhone(phoneFromAction(basePayload))
-	probeResult := runner.probeAccountWithState(ctx, EngineRegistrationInput{Phone: phone, DeliveryMethod: waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS}, state)
+	probeResult := runner.probeAccountWithState(ctx, EngineRegistrationInput{AppVersion: defaultWAAppVersion, Phone: phone, DeliveryMethod: waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS}, state)
 	if !registrationProbeAllowsSMS(probeResult) {
 		return rejectedRegistrationResult(basePayload, registrationProbeFailureMap(probeResult, route, managedRoute)), nil
 	}
-	codeResult, updatedState := runner.requestVerificationCodeWithState(ctx, EngineRegistrationInput{Phone: phone, DeliveryMethod: waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS}, state)
+	codeResult, updatedState := runner.requestVerificationCodeWithState(ctx, EngineRegistrationInput{AppVersion: defaultWAAppVersion, Phone: phone, DeliveryMethod: waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS}, state)
 	if !verificationCodeRequestAccepted(codeResult) {
 		return rejectedRegistrationResult(basePayload, registrationRequestFailureMap(codeResult, route, managedRoute)), nil
 	}
