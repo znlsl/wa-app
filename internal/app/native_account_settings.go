@@ -237,15 +237,20 @@ func accountProfilePictureSetResultFromIQ(node chatdNode) EngineAccountSettingsR
 }
 
 func emailSetResultFromIQ(node chatdNode, emailAddress string) EngineAccountSettingsResult {
+	status := &waappv1.TwoFactorAuthStatus{EmailConfigured: true, EmailAddress: strings.TrimSpace(emailAddress)}
 	emailNode, ok := chatdChild(node, "email")
 	if !ok {
-		return malformedAccountSettingsResult("WA set email response is missing email")
+		return EngineAccountSettingsResult{TwoFactorStatus: status}
 	}
 	doVerify, ok := chatdNodeBoolValue(emailNode, "do_verify")
 	if !ok {
-		return malformedAccountSettingsResult("WA set email response is missing email verification status")
+		if autoVerifyStatus := chatdNodeStatus(emailNode, "auto_verify"); autoVerifyStatus == "success" || chatdNodeBool(emailNode, "verified") || chatdNodeBool(emailNode, "confirmed") {
+			status.EmailVerified = true
+			status.EmailConfirmed = chatdNodeBool(emailNode, "confirmed")
+			return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_VERIFIED, TwoFactorStatus: status}
+		}
+		return EngineAccountSettingsResult{TwoFactorStatus: status}
 	}
-	status := &waappv1.TwoFactorAuthStatus{EmailConfigured: true, EmailAddress: strings.TrimSpace(emailAddress)}
 	if doVerify {
 		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_NEEDS_VERIFICATION, TwoFactorStatus: status}
 	}
