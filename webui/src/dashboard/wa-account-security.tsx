@@ -79,6 +79,7 @@ export function WaAccountSecurityPanel({ account, onDone, onError }: Props) {
           email_address: email,
           email_configured: true,
           email_verified: setStatus === AccountSettingsOperationStatus.ACCOUNT_SETTINGS_OPERATION_STATUS_VERIFIED,
+          email_confirmed: setStatus === AccountSettingsOperationStatus.ACCOUNT_SETTINGS_OPERATION_STATUS_VERIFIED,
         });
       }
       if (setStatus === AccountSettingsOperationStatus.ACCOUNT_SETTINGS_OPERATION_STATUS_VERIFIED) {

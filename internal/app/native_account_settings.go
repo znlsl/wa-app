@@ -193,16 +193,43 @@ func accountSettingsResultFromIQ(input EngineAccountSettingsInput, node chatdNod
 }
 
 func twoFactorAuthStatusFromIQ(node chatdNode) EngineAccountSettingsResult {
+	status := &waappv1.TwoFactorAuthStatus{}
 	twoFactorNode, ok := chatdChild(node, "2fa")
 	if !ok {
-		return EngineAccountSettingsResult{TwoFactorStatus: &waappv1.TwoFactorAuthStatus{}}
+		if emailNode, hasEmail := chatdChild(node, "email"); hasEmail {
+			mergeEmailStatusFromIQ(status, emailNode)
+		}
+		return EngineAccountSettingsResult{TwoFactorStatus: status}
 	}
 	_, hasCode := chatdChild(twoFactorNode, "code")
-	_, hasEmail := chatdChild(twoFactorNode, "email")
-	return EngineAccountSettingsResult{TwoFactorStatus: &waappv1.TwoFactorAuthStatus{
-		Configured:      hasCode || chatdNodeBool(twoFactorNode, "configured") || chatdNodeBool(twoFactorNode, "enabled"),
-		EmailConfigured: hasEmail || chatdNodeBool(twoFactorNode, "email_configured") || chatdNodeBool(twoFactorNode, "email_set"),
-	}}
+	emailNode, hasEmail := chatdChild(twoFactorNode, "email")
+	status.Configured = hasCode || chatdNodeBool(twoFactorNode, "configured") || chatdNodeBool(twoFactorNode, "enabled")
+	status.EmailConfigured = hasEmail || chatdNodeBool(twoFactorNode, "email_configured") || chatdNodeBool(twoFactorNode, "email_set")
+	if hasEmail {
+		mergeEmailStatusFromIQ(status, emailNode)
+	}
+	if emailNode, hasEmail := chatdChild(node, "email"); hasEmail {
+		mergeEmailStatusFromIQ(status, emailNode)
+	}
+	return EngineAccountSettingsResult{TwoFactorStatus: status}
+}
+
+func mergeEmailStatusFromIQ(status *waappv1.TwoFactorAuthStatus, emailNode chatdNode) {
+	if status == nil {
+		return
+	}
+	status.EmailConfigured = true
+	if value, ok := chatdNodeStringValue(emailNode, "email_address"); ok {
+		if emailAddress := strings.TrimSpace(value); emailAddress != "" {
+			status.EmailAddress = emailAddress
+		}
+	}
+	if verified, ok := chatdNodeBoolValue(emailNode, "verified"); ok {
+		status.EmailVerified = verified
+	}
+	if confirmed, ok := chatdNodeBoolValue(emailNode, "confirmed"); ok {
+		status.EmailConfirmed = confirmed
+	}
 }
 
 func accountProfilePictureSetResultFromIQ(node chatdNode) EngineAccountSettingsResult {

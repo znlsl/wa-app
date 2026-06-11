@@ -323,11 +323,17 @@ func preserveTwoFactorEmailProjection(current *waappv1.TwoFactorAuthStatus, next
 	if out == nil || current == nil {
 		return out
 	}
-	if strings.TrimSpace(out.GetEmailAddress()) == "" {
-		out.EmailAddress = strings.TrimSpace(current.GetEmailAddress())
+	currentEmailAddress := strings.TrimSpace(current.GetEmailAddress())
+	nextEmailAddress := strings.TrimSpace(out.GetEmailAddress())
+	if nextEmailAddress == "" {
+		out.EmailAddress = currentEmailAddress
+		nextEmailAddress = currentEmailAddress
 	}
-	if out.GetEmailAddress() != "" {
-		out.EmailConfigured = out.GetEmailConfigured() || current.GetEmailConfigured()
+	if nextEmailAddress == "" {
+		return out
+	}
+	out.EmailConfigured = out.GetEmailConfigured() || current.GetEmailConfigured() || nextEmailAddress != ""
+	if nextEmailAddress == currentEmailAddress {
 		out.EmailVerified = out.GetEmailVerified() || current.GetEmailVerified()
 		out.EmailConfirmed = out.GetEmailConfirmed() || current.GetEmailConfirmed()
 	}
@@ -339,10 +345,21 @@ func mergeTwoFactorAuthStatus(status *waappv1.TwoFactorAuthStatus, patch *waappv
 		return
 	}
 	status.Configured = status.GetConfigured() || patch.GetConfigured()
-	status.EmailConfigured = status.GetEmailConfigured() || patch.GetEmailConfigured()
-	if strings.TrimSpace(patch.GetEmailAddress()) != "" {
-		status.EmailAddress = strings.TrimSpace(patch.GetEmailAddress())
+	patchEmailAddress := strings.TrimSpace(patch.GetEmailAddress())
+	if patchEmailAddress != "" {
+		currentEmailAddress := strings.TrimSpace(status.GetEmailAddress())
+		status.EmailAddress = patchEmailAddress
+		status.EmailConfigured = status.GetEmailConfigured() || patch.GetEmailConfigured() || patchEmailAddress != ""
+		if patchEmailAddress == currentEmailAddress {
+			status.EmailVerified = status.GetEmailVerified() || patch.GetEmailVerified()
+			status.EmailConfirmed = status.GetEmailConfirmed() || patch.GetEmailConfirmed()
+			return
+		}
+		status.EmailVerified = patch.GetEmailVerified()
+		status.EmailConfirmed = patch.GetEmailConfirmed()
+		return
 	}
+	status.EmailConfigured = status.GetEmailConfigured() || patch.GetEmailConfigured()
 	status.EmailVerified = status.GetEmailVerified() || patch.GetEmailVerified()
 	status.EmailConfirmed = status.GetEmailConfirmed() || patch.GetEmailConfirmed()
 }
