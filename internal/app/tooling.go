@@ -483,7 +483,18 @@ func phoneProfileToProto(phone *waappv1.PhoneTarget, profile nativePhoneProfile)
 		Map     map[string]string `json:"map"`
 	}{Schema: profile.Schema, Phone: phone.GetE164Number(), Vendor: profile.DeviceVendor, Model: profile.DeviceModel, Android: profile.AndroidVersion, Base: base, Raw: raw, Map: device})
 	sum := sha256.Sum256(canonical)
-	return &waappv1.PhoneFingerprintProfile{Schema: profile.Schema, Phone: phone, PhoneSha256: profile.PhoneSHA256, BaseParams: base, RawParams: raw, DeviceMapParams: device, ProfileSha256: hex.EncodeToString(sum[:])}
+	return &waappv1.PhoneFingerprintProfile{
+		Schema:          profile.Schema,
+		Phone:           phone,
+		PhoneSha256:     profile.PhoneSHA256,
+		BaseParams:      base,
+		RawParams:       raw,
+		DeviceMapParams: device,
+		ProfileSha256:   hex.EncodeToString(sum[:]),
+		DeviceVendor:    profile.DeviceVendor,
+		DeviceModel:     profile.DeviceModel,
+		AndroidVersion:  profile.AndroidVersion,
+	}
 }
 
 func parseWamsysJSON(text string) (*waappv1.WamsysCapture, error) {

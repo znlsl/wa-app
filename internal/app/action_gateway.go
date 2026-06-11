@@ -128,9 +128,12 @@ func (g *actionGateway) generateTransientFingerprint(ctx context.Context, payloa
 
 func fingerprintSummary(profile *waappv1.PhoneFingerprintProfile) map[string]any {
 	return map[string]any{
-		"schema":         profile.GetSchema(),
-		"profile_sha256": profile.GetProfileSha256(),
-		"phone_sha256":   profile.GetPhoneSha256(),
+		"schema":          profile.GetSchema(),
+		"profile_sha256":  profile.GetProfileSha256(),
+		"phone_sha256":    profile.GetPhoneSha256(),
+		"device_vendor":   profile.GetDeviceVendor(),
+		"device_model":    profile.GetDeviceModel(),
+		"android_version": profile.GetAndroidVersion(),
 	}
 }
 

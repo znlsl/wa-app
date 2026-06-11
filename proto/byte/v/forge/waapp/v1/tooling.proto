@@ -37,6 +37,9 @@ message PhoneFingerprintProfile {
   map<string, string> raw_params = 6;
   map<string, string> device_map_params = 7;
   string profile_sha256 = 8;
+  string device_vendor = 9;
+  string device_model = 10;
+  string android_version = 11;
 }
 
 message RegistrationRequestParam {
