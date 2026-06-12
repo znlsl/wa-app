@@ -630,6 +630,9 @@ func (e *NativeEngine) codeParams(phone *waappv1.PhoneTarget, method waappv1.Ver
 	if token := e.registrationToken(phone, state); token != "" {
 		params["token"] = token
 	}
+	if advertisingID := nativeAdvertisingID(state); advertisingID != "" && shouldSendNativeAdvertisingID(phone) {
+		params["advertising_id"] = advertisingID
+	}
 	raw := map[string]struct{}{"id": {}, "backup_token": {}}
 	applyNativeRawParamMap(params, raw, codeDeviceMap(methodName, state), true)
 	return params, raw

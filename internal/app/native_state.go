@@ -62,6 +62,7 @@ type nativePhoneProfile struct {
 	IDHex               string            `json:"id_hex"`
 	BackupToken         string            `json:"backup_token"`
 	BackupTokenHex      string            `json:"backup_token_hex"`
+	AdvertisingID       string            `json:"advertising_id,omitempty"`
 	AdditionalMapFields map[string]string `json:"additional_map_fields"`
 }
 
@@ -390,8 +391,25 @@ func buildNativePhoneProfile(phone *waappv1.PhoneTarget) nativePhoneProfile {
 		IDHex:               hex.EncodeToString(id),
 		BackupToken:         pctBytes(backup),
 		BackupTokenHex:      hex.EncodeToString(backup),
+		AdvertisingID:       newUUIDString(),
 		AdditionalMapFields: additionalFields,
 	}
+}
+
+func nativeAdvertisingID(state nativeState) string {
+	if value := strings.TrimSpace(state.Profile.AdvertisingID); value != "" {
+		return value
+	}
+	seed := sha256.Sum256([]byte(strings.Join([]string{
+		"byte-v-forge-wa-advertising-id/v1",
+		state.Profile.PhoneSHA256,
+		state.Profile.FDID,
+		state.Profile.ExpIDUUID,
+	}, "|")))
+	raw := append([]byte{}, seed[:16]...)
+	raw[6] = (raw[6] & 0x0f) | 0x40
+	raw[8] = (raw[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", raw[0:4], raw[4:6], raw[6:8], raw[8:10], raw[10:])
 }
 
 func uuidPair() (string, string) {

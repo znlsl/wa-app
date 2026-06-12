@@ -47,3 +47,4 @@ APK 的冷却是按通道生效：真实可见 fallback 先从 `pref_reg_methods
 - 号码检测返回 `sms_available=true` 但 WA 未返回显式 `fallback_methods` 时，检测结果会合成 SMS method status，避免前端只因 method_statuses 为空显示无可用通道。
 - `StartRegistration` 增加脱敏 `/v2/code` 结果日志，只输出 phone hash、route、method、status/reason、retry_after 和 method_status_count，不输出 token、OTP、ENC、key bundle 或请求正文。
 - `/v2/code`/`/v2/exist` HTTP envelope 按最新 APK `RetryingHttpClient` 加回加密体签名形态：body 使用 `ENC=<cipher>&H=<signature>`，并携带 `Authorization` attestation header；运行日志仍不输出 ENC/H/Authorization。
+- `/v2/code` 补最新 APK `KotlinRegistrationBridge.A06 -> A0P` 的 `advertising_id` 标量；非 EU profile 生成稳定 UUID，避免和真实 App 可用 GAID 的请求形态继续偏离。

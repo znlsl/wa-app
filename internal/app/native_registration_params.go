@@ -884,3 +884,19 @@ func jsonValuePresent(value any) bool {
 	}
 	return true
 }
+
+func shouldSendNativeAdvertisingID(phone *waappv1.PhoneTarget) bool {
+	country := strings.ToUpper(strings.TrimSpace(phone.GetCountryIso2()))
+	if country == "" {
+		return true
+	}
+	_, blocked := nativeAdvertisingIDSuppressedCountries[country]
+	return !blocked
+}
+
+var nativeAdvertisingIDSuppressedCountries = map[string]struct{}{
+	"AT": {}, "BE": {}, "BG": {}, "CY": {}, "CZ": {}, "DE": {}, "DK": {}, "EE": {},
+	"ES": {}, "FI": {}, "FR": {}, "GR": {}, "HR": {}, "HU": {}, "IE": {}, "IT": {},
+	"LT": {}, "LU": {}, "LV": {}, "MT": {}, "NL": {}, "PL": {}, "PT": {}, "RO": {},
+	"SE": {}, "SI": {}, "SK": {},
+}
