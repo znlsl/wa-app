@@ -21,7 +21,7 @@
 - `/v2/register` 附加 map 改为 App `A0F(msys/verify)` 形态，移除 register 阶段不应携带的 `hasav/reason/device_ram/db/recaptcha/education_screen_displayed/prefer_sms_over_flash/feo2_query_status`。
 - `nativePhoneProfile` 增加 profile 级 `pid`，旧 profile 缺失时使用 App capture 中同形态的默认 PID。
 - `/v2/code` map 补 `pid`，避免字段集少于 App capture。
-- `/v2/code`、`/v2/register` 继续沿用 profile 生成出的运营商上下文；无运营商信息时保持空值并由请求渲染层省略，避免把所有注册请求固定成同一无 SIM 指纹。
+- `/v2/code`、`/v2/register` 继续沿用 profile 生成出的运营商上下文；无运营商信息时按 APK `C253119h.A00(null)` / `A0H` 行为发送 `mcc/mnc/sim_mcc/sim_mnc=000`，不省略四个运营商字段。
 - `/v2/exist` map 补 `pid`。
 - 运行态 `/v2/exist`、`/v2/code` 自动注入 `gpia/_gi/_gg/_gp/_ga/aid`：`gpia/_gi/_gg` fresh，`_gp/_ga/aid` profile-stable，长度和编码对齐 App capture。
 - 默认 App version / User-Agent 升级到 `2.26.22.78`；加载旧 native profile 时只刷新 UA 版本，保留设备型号、Android 版本和稳定 profile 材料。
@@ -43,6 +43,6 @@ APK 的冷却是按通道生效：真实可见 fallback 先从 `pref_reg_methods
 
 ## 本轮继续对齐
 
-- 回滚固定无 SIM 设备画像：最新 App 注册需要保持 profile 级设备/运营商/PID/RAM 自洽，不能把最新 `2.26.22.78` 请求强行套到旧动态 capture 的 `HUAWEI/TRT-AL00A Android 7.0 + 000` 形态上。运行态恢复优先使用 transient/native profile 中已生成的设备字段，缺失时才用最小默认值。
+- 回滚固定整机画像但保留 APK 无运营商默认语义：最新 App 注册需要保持 profile 级设备/PID/RAM 自洽；运营商缺失时 `mcc/mnc/sim_mcc/sim_mnc` 仍按 APK 发送 `000`。
 - 号码检测返回 `sms_available=true` 但 WA 未返回显式 `fallback_methods` 时，检测结果会合成 SMS method status，避免前端只因 method_statuses 为空显示无可用通道。
 - `StartRegistration` 增加脱敏 `/v2/code` 结果日志，只输出 phone hash、route、method、status/reason、retry_after 和 method_status_count，不输出 token、OTP、ENC、key bundle 或请求正文。
