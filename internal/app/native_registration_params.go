@@ -153,7 +153,7 @@ func codeDeviceMap(method string, state nativeState) map[string]string {
 		"hasav":                      "2",
 		"client_metrics":             nativeCodeClientMetrics(),
 		"education_screen_displayed": "false",
-		"prefer_sms_over_flash":      "false",
+		"prefer_sms_over_flash":      nativePreferSMSOverFlash(method),
 		"_ge":                        `{"sb":false,"sv":false}`,
 		"network_radio_type":         fields["network_radio_type"],
 		"simnum":                     fields["simnum"],
@@ -169,10 +169,14 @@ func codeDeviceMap(method string, state nativeState) map[string]string {
 		"sim_mcc":                    fields["sim_mcc"],
 		"sim_mnc":                    fields["sim_mnc"],
 	}
-	if method == "flash" {
-		out["prefer_sms_over_flash"] = "false"
-	}
 	return out
+}
+
+func nativePreferSMSOverFlash(method string) string {
+	if method == "sms" {
+		return "true"
+	}
+	return "false"
 }
 
 func registerDeviceMap(method string, state nativeState) map[string]string {
@@ -342,8 +346,7 @@ func parseExistProbeResult(data map[string]any) EngineProbeResult {
 	protocolRejected := baseProtocolRejected
 	notRegistered := false
 	registeredKnown := registered || invalidNumber
-	smsRouteUnavailable := existRouteUnavailableReason(reason)
-	canSendSMS := smsProbeAvailableByCooldownOnly(smsWait, smsWaitExhausted, blocked, protocolRejected, invalidNumber, rateLimited, smsRouteUnavailable)
+	canSendSMS := smsProbeAvailableByCooldownOnly(smsWait, smsWaitExhausted, blocked, protocolRejected, invalidNumber, rateLimited)
 	methods := methodsFromStatuses(methodStatuses)
 	reachable := !protocolRejected && !blocked && !invalidNumber && !rateLimited && (existReachableStatus(status) || registered || notRegistered || status != "" || reason != "")
 	result := EngineProbeResult{
@@ -430,16 +433,6 @@ func existRateLimitedReason(reason string) bool {
 		return false
 	}
 }
-
-func existRouteUnavailableReason(reason string) bool {
-	switch reason {
-	case "no_routes", "route_not_found", "route_unavailable":
-		return true
-	default:
-		return false
-	}
-}
-
 func existRegisteredSignal(status string, reason string, data map[string]any) bool {
 	if existRegisteredReason(reason) {
 		return true
@@ -789,8 +782,8 @@ func verificationSMSWaitExhausted(data map[string]any) bool {
 	return verificationMethodWaitStatus(data, "sms", true).Exhausted
 }
 
-func smsProbeAvailableByCooldownOnly(smsWait int64, smsWaitExhausted bool, blocked bool, protocolRejected bool, invalidNumber bool, rateLimited bool, routeUnavailable bool) bool {
-	return smsWait <= 0 && !smsWaitExhausted && !blocked && !protocolRejected && !invalidNumber && !rateLimited && !routeUnavailable
+func smsProbeAvailableByCooldownOnly(smsWait int64, smsWaitExhausted bool, blocked bool, protocolRejected bool, invalidNumber bool, rateLimited bool) bool {
+	return smsWait <= 0 && !smsWaitExhausted && !blocked && !protocolRejected && !invalidNumber && !rateLimited
 }
 
 func stringList(value any) []string {

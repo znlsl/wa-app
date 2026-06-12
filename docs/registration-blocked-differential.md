@@ -52,3 +52,5 @@ APK 的冷却是按通道生效：真实可见 fallback 先从 `pref_reg_methods
 - `/v2/code`/`/v2/exist` HTTP transport 对齐最新 APK 静态形态：不再由 Go transport 显式发送 `Connection: close`，也不手动补 `Connection: Keep-Alive`；保留 `WaMsysRequest` / `request_token` 的 APK 头名形态。
 - `/v2/code`/`/v2/exist` 的 `db` 不再固定成 hook/emulator capture 里的 `1`；最新 APK 该字段来自 `Settings.Global["adb_enabled"]`，默认指纹按普通手机发送 `0`。`+84` 号码的 transient profile 增加 VN 运营商 MCC/MNC 候选，避免继续落到无 SIM `000/000` 形态。
 - 回滚运行态 Pure-Go WAMSYS fake fallback：`gpia/_gi/_gg/_gp/_ga/aid` 是 APK/JNI/Play Integrity 可信材料，当前服务没有真实 Android oracle 时不再自动伪造并发送，避免 `/v2/code` 因可区分假材料继续落到 `no_routes`。
+- 最新 APK 对 `/v2/exist` / same-device check 的 `no_routes` 仍会继续解析 wait 与 fallback 元数据；wa-app 只把 blocked、号码异常、协议错误和冷却作为预检终局。SMS 直发是否真正可用由后续 `/v2/code` 决定，避免在预检阶段误报“暂无可用验证通道”。
+- 显式选择 SMS fallback 时，APK 会把 `pref_prefer_sms_over_flash=true` 写入请求 map；wa-app 对直发 SMS 同步发送 `prefer_sms_over_flash=true`，避免服务端继续按 flash 优先分流。
