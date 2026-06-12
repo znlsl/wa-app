@@ -203,7 +203,14 @@ func nativeDeviceMapFields(state nativeState) map[string]string {
 		}
 		fields[key] = value
 	}
-	defaults := map[string]string{
+	for key, value := range nativeDefaultDeviceMapFields() {
+		fields[key] = value
+	}
+	return fields
+}
+
+func nativeDefaultDeviceMapFields() map[string]string {
+	return map[string]string{
 		"network_radio_type":    "1",
 		"pid":                   "29418",
 		"simnum":                "0",
@@ -220,10 +227,6 @@ func nativeDeviceMapFields(state nativeState) map[string]string {
 		"sim_mcc":               "000",
 		"sim_mnc":               "000",
 	}
-	for key, value := range defaults {
-		fields[key] = firstNonEmpty(fields[key], value)
-	}
-	return fields
 }
 
 func nativeCodeClientMetrics() string {

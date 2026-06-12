@@ -180,6 +180,7 @@ func buildNumberProbeResult(input map[string]any, proxy map[string]any, fingerpr
 	accountReachable := statusIn(accountStatus, "reachable", "account_probe_status_reachable", "ok", "sent", "valid", "exists") || statusIn(accountRawStatus, "ok", "sent", "valid", "exists") || accountFlow == accountProbeFlowRegistered || accountFlow == accountProbeFlowNotRegistered
 	smsAvailable := boolField(sms, "can_send_sms") || boolField(sms, "sms_available") || statusIn(smsStatus, "available", "sms_available", "verification_request_status_sent", "sent", "waiting", "ok")
 	smsWaitSeconds := firstNumberValue(sms, "sms_wait_seconds", "wait_seconds", "retry_after_seconds", "cooldown_seconds", "remaining_seconds", "retry_after", "wait")
+	methodStatuses = numberProbeMethodStatuses(methodStatuses, smsAvailable, smsWaitSeconds)
 	smsWaitUntil := firstNonEmpty(textField(sms, "sms_wait_until"), textField(sms, "wait_until"), textField(sms, "retry_after_at"), textField(sms, "cooldown_until"))
 	proxyAccepted := boolField(proxy, "accepted")
 	if accountFlow == accountProbeFlowUnknown {
@@ -225,6 +226,41 @@ func buildNumberProbeResult(input map[string]any, proxy map[string]any, fingerpr
 			"reject_reason":      failureReason,
 			"can_register":       canRegister,
 		},
+	}
+}
+
+func numberProbeMethodStatuses(statuses []map[string]any, smsAvailable bool, smsWaitSeconds any) []map[string]any {
+	if len(statuses) > 0 {
+		return statuses
+	}
+	cooldownSeconds := numberProbeInt64(smsWaitSeconds)
+	if !smsAvailable && cooldownSeconds <= 0 {
+		return statuses
+	}
+	return []map[string]any{{
+		"method":           "sms",
+		"delivery_method":  waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS.String(),
+		"available":        smsAvailable && cooldownSeconds <= 0,
+		"cooldown_seconds": cooldownSeconds,
+	}}
+}
+
+func numberProbeInt64(value any) int64 {
+	switch typed := value.(type) {
+	case int:
+		return normalizeWaitSeconds(int64(typed))
+	case int32:
+		return normalizeWaitSeconds(int64(typed))
+	case int64:
+		return normalizeWaitSeconds(typed)
+	case float32:
+		return normalizeWaitSeconds(int64(typed))
+	case float64:
+		return normalizeWaitSeconds(int64(typed))
+	case string:
+		return normalizeWaitSeconds(jsonInt64(typed))
+	default:
+		return 0
 	}
 }
 

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"log"
 	"strings"
 	"time"
 
@@ -53,6 +54,7 @@ func (s *Server) StartRegistration(ctx context.Context, payload map[string]any) 
 		return rejectedRegistrationResult(basePayload, registrationProbeFailureMap(probeResult, route, managedRoute)), nil
 	}
 	codeResult, updatedState := runner.requestVerificationCodeWithState(ctx, EngineRegistrationInput{AppVersion: defaultWAAppVersion, Phone: phone, DeliveryMethod: method}, state)
+	logRegistrationCodeResult(basePayload, phone, route, method, codeResult)
 	if !verificationCodeRequestAccepted(codeResult) {
 		return rejectedRegistrationResult(basePayload, registrationRequestFailureMap(codeResult, method, route, managedRoute)), nil
 	}
@@ -106,6 +108,29 @@ func (s *Server) StartRegistration(ctx context.Context, payload map[string]any) 
 		response["retry_after_seconds"] = seconds
 	}
 	return response, nil
+}
+
+func logRegistrationCodeResult(payload map[string]any, phone *waappv1.PhoneTarget, route DynamicProxyRoute, method waappv1.VerificationDeliveryMethod, result EngineCodeResult) {
+	phoneHash := ""
+	if phone != nil && phone.GetE164Number() != "" {
+		phoneHash = stableID(phone.GetE164Number())
+	}
+	protoErr := ToProtoError(result.Err)
+	log.Printf(
+		"wa_registration_code_result correlation=%s phone_hash=%s proxy_account=%s route_id=%s accepted=%t method=%s status=%s raw_status=%s raw_reason=%s retry_after_seconds=%d method_status_count=%d error=%s",
+		probeLogValue(actionContext(payload).GetCorrelationId()),
+		phoneHash,
+		probeLogValue(route.AccountID),
+		probeLogValue(route.RouteID),
+		verificationCodeRequestAccepted(result),
+		probeLogValue(registrationMethodName(method, "sms")),
+		probeLogValue(result.Status.String()),
+		probeLogValue(result.RawStatus),
+		probeLogValue(result.RawReason),
+		int64(result.RetryAfter/time.Second),
+		len(result.MethodStatuses),
+		probeLogValue(protoErr.GetMessage()),
+	)
 }
 
 func registrationMethodFromPayload(payload map[string]any) waappv1.VerificationDeliveryMethod {

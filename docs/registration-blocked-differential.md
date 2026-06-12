@@ -40,3 +40,9 @@
 APK 的冷却是按通道生效：真实可见 fallback 先从 `pref_reg_methods_order`（默认 `flash,sms,voice`）删除 wait 缺失或 `-1` 的 method，再与 `fallback_methods` 求交集，并叠加本地 eligibility/capability。`too_recent` 只代表当前请求或当前通道太频繁，不能直接把所有协议 taxonomy 都展示为可尝试通道；只有 blocked、号码格式异常或协议级拒绝才应全局停止。
 
 对当前 +86 样本，应按 APK UI 语义理解为 `visible_methods=[flash,sms]`：`flash` 是 Android 设备侧未接来电验证，本服务不作为普通服务端直发通道；`sms` 可见但处于 cooldown，需要置灰并显示倒计时。
+
+## 本轮继续对齐
+
+- `/v2/exist` 与 `/v2/code` 的默认设备画像改为 APK capture 同款无 SIM 运行态：`HUAWEI/TRT-AL00A Android 7.0`、`mcc/mnc/sim_mcc/sim_mnc=000`、`simnum=0`、`pid=29418`、`device_ram=3.53`。旧 transient/native profile 中已经生成的随机运营商、PID、RAM 不再覆盖运行态请求字段。
+- 号码检测返回 `sms_available=true` 但 WA 未返回显式 `fallback_methods` 时，检测结果会合成 SMS method status，避免前端只因 method_statuses 为空显示无可用通道。
+- `StartRegistration` 增加脱敏 `/v2/code` 结果日志，只输出 phone hash、route、method、status/reason、retry_after 和 method_status_count，不输出 token、OTP、ENC、key bundle 或请求正文。
