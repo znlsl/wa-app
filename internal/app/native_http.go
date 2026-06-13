@@ -233,12 +233,67 @@ func nativeAndroidDialTLSContext(dialContext func(context.Context, string, strin
 			_ = rawConn.Close()
 			return nil, err
 		}
-		tlsConn := utls.UClient(rawConn, &utls.Config{ServerName: host, InsecureSkipVerify: true}, utls.HelloAndroid_11_OkHttp)
+		tlsConn := utls.UClient(rawConn, &utls.Config{ServerName: host, InsecureSkipVerify: true, NextProtos: []string{"http/1.1"}}, utls.HelloCustom)
+		if err := tlsConn.ApplyPreset(nativeAndroidOkHTTPClientHelloSpec()); err != nil {
+			_ = rawConn.Close()
+			return nil, err
+		}
 		if err := tlsConn.HandshakeContext(ctx); err != nil {
 			_ = rawConn.Close()
 			return nil, err
 		}
 		return tlsConn, nil
+	}
+}
+
+func nativeAndroidOkHTTPClientHelloSpec() *utls.ClientHelloSpec {
+	return &utls.ClientHelloSpec{
+		CipherSuites: []uint16{
+			utls.TLS_AES_256_GCM_SHA384,
+			utls.TLS_AES_128_GCM_SHA256,
+			utls.TLS_CHACHA20_POLY1305_SHA256,
+			utls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+			utls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+			utls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
+			utls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+			utls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+			utls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
+			utls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+			utls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+			utls.TLS_RSA_WITH_AES_128_GCM_SHA256,
+			utls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+			utls.TLS_RSA_WITH_AES_128_CBC_SHA,
+			utls.TLS_RSA_WITH_AES_256_CBC_SHA,
+		},
+		CompressionMethods: []byte{0},
+		Extensions: []utls.TLSExtension{
+			&utls.SNIExtension{},
+			&utls.ExtendedMasterSecretExtension{},
+			&utls.RenegotiationInfoExtension{Renegotiation: utls.RenegotiateOnceAsClient},
+			&utls.SupportedCurvesExtension{Curves: []utls.CurveID{
+				utls.X25519,
+				utls.CurveP256,
+				utls.CurveP384,
+			}},
+			&utls.SupportedPointsExtension{SupportedPoints: []byte{0}},
+			&utls.SessionTicketExtension{},
+			&utls.ALPNExtension{AlpnProtocols: []string{"http/1.1"}},
+			&utls.StatusRequestExtension{},
+			&utls.SignatureAlgorithmsExtension{SupportedSignatureAlgorithms: []utls.SignatureScheme{
+				utls.ECDSAWithP256AndSHA256,
+				utls.PSSWithSHA256,
+				utls.PKCS1WithSHA256,
+				utls.ECDSAWithP384AndSHA384,
+				utls.PSSWithSHA384,
+				utls.PKCS1WithSHA384,
+				utls.PSSWithSHA512,
+				utls.PKCS1WithSHA512,
+				utls.PKCS1WithSHA1,
+			}},
+			&utls.KeyShareExtension{KeyShares: []utls.KeyShare{{Group: utls.X25519}}},
+			&utls.PSKKeyExchangeModesExtension{Modes: []uint8{utls.PskModeDHE}},
+			&utls.SupportedVersionsExtension{Versions: []uint16{utls.VersionTLS13, utls.VersionTLS12}},
+		},
 	}
 }
 
