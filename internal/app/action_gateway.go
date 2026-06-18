@@ -740,7 +740,7 @@ func (g *actionGateway) registrationSubmitRunner(ctx context.Context, payload ma
 		return nil, WAProxyRoute{}, false, registrationProxyLease{}, err
 	}
 	if wait, err := g.loadRegistrationOTPWait(ctx, textField(payload, "wa_account_id"), textField(payload, "verification_request_id")); err == nil && g.server.registrationProxyLeaseEnabled() && validRegistrationProxyLease(wait.ProxyLease) {
-		route := proxyRuntimeLeaseRoute(wait.ProxyLease, WAProxyRoute{Source: waProxySourceSystemCommon, PolicyMode: waProxyModeCommon})
+		route := registrationProxyLeaseRoute(wait.ProxyLease, WAProxyRoute{Source: waProxySourceSystemCommon, PolicyMode: waProxyModeCommon})
 		proxied, err := engine.WithProxyURL(route.ProxyURL)
 		if err != nil {
 			return nil, WAProxyRoute{}, false, registrationProxyLease{}, err

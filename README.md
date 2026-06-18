@@ -42,9 +42,9 @@ docker compose up -d
 - `WA_APP_PG_DSN`：可选 PostgreSQL DSN；为空时使用内置 SQLite 持久化。
 - `WA_APP_REDIS_URL`：可选 Redis URL；为空时使用内置 SQLite 运行态存储。
 - `WA_COMMON_PROXY`：系统默认 WA 出站代理；账号未配置代理策略且阶段代理为空时使用，仍为空则直连。
-- `WA_REGISTRATION_PROXY_LEASE_MODE`：注册链路 proxy-runtime 租约模式；`optional` 会失败回退，`disabled` 关闭租约，`required` 强制租约成功。
-- `PROXY_RUNTIME_API_BASE_URL`：可选 proxy-runtime API 地址；留空时不请求动态租约。
-- `PROXY_RUNTIME_SERVICE_AUTH_TOKEN`：可选 proxy-runtime 服务令牌；示例文件只保留空占位。
+- `WA_REGISTRATION_PROXY_LEASE_MODE`：注册链路代理租约模式；`optional` 会失败回退，`disabled` 关闭租约，`required` 强制租约成功。
+- `WA_REGISTRATION_PROXY_LEASE_API_BASE_URL`：可选通用代理租约 HTTP API 地址；留空时不请求动态租约。
+- `WA_REGISTRATION_PROXY_LEASE_AUTH_TOKEN`：可选代理租约 API 认证令牌；示例文件只保留空占位。
 
 PostgreSQL 和 Redis 都是可选组件。需要启用时，在 `docker-compose.yml` 中取消对应服务注释，并在 `.env` 中填写 `WA_APP_PG_DSN` / `WA_APP_REDIS_URL`。
 

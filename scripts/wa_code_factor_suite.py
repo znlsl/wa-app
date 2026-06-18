@@ -54,7 +54,7 @@ class SuiteArgs:
 
 
 @dataclass(frozen=True)
-class ProxyRuntimeLease:
+class RegistrationProxyLease:
     lease_id: str
     account_id: str
     purpose: str
@@ -65,7 +65,7 @@ class ProxyRuntimeLease:
     exit_city: str = ""
 
 
-class ProxyRuntimeLeaseClient:
+class RegistrationProxyLeaseClient:
     def __init__(self, api_base: str, auth_token: str, timeout: float, egress_host: str, egress_port: int, egress_scheme: str) -> None:
         self._api_base = api_base.rstrip("/")
         self._timeout = max(timeout, 1)
@@ -77,7 +77,7 @@ class ProxyRuntimeLeaseClient:
         if auth_token:
             self._session.headers.update({"Authorization": "Bearer " + auth_token})
 
-    def acquire(self, account_id: str, purpose: str, ttl_seconds: int, job_key: str) -> ProxyRuntimeLease:
+    def acquire(self, account_id: str, purpose: str, ttl_seconds: int, job_key: str) -> RegistrationProxyLease:
         labels = {
             "purpose": "wa-app-probe",
             "job_id": job_key,
@@ -88,10 +88,7 @@ class ProxyRuntimeLeaseClient:
             "purpose": purpose,
             "forceNew": True,
             "policy": {
-                "mode": "PROXY_SESSION_MODE_STICKY",
                 "stickyTtl": f"{max(30, int(ttl_seconds or 120))}s",
-                "upstreamKind": "PROXY_UPSTREAM_KIND_DYNAMIC_IP",
-                "rotationMode": "PROXY_ROTATION_MODE_STICKY_SESSION",
                 "labels": labels,
             },
             "selectionPolicy": {"purpose": purpose, "maxAttempts": 1},
@@ -103,21 +100,21 @@ class ProxyRuntimeLeaseClient:
         egress = dict_value(body, "egress") or dict_value(lease, "egress")
         lease_id = text_value(lease, "leaseId", "lease_id") or text_value(dict_value(egress, "labels"), "lease_id", "leaseId")
         if not lease_id:
-            raise RuntimeError("proxy-runtime lease_id is empty")
+            raise RuntimeError("registration proxy lease_id is empty")
         lease_account_id = text_value(lease, "accountId", "account_id") or account_id
         lease_purpose = text_value(lease, "purpose") or purpose
-        return ProxyRuntimeLease(
+        return RegistrationProxyLease(
             lease_id=lease_id,
             account_id=lease_account_id,
             purpose=lease_purpose,
             proxy_url=self._proxy_url(egress),
-            listener_id=proxy_runtime_listener_id(lease, body),
-            exit_country=proxy_runtime_exit_text(("exitCountry", "exit_country", "countryCode", "country_code"), egress, lease, body).upper(),
-            exit_state=proxy_runtime_exit_text(("exitState", "exit_state", "region", "state"), egress, lease, body).upper(),
-            exit_city=proxy_runtime_exit_text(("exitCity", "exit_city", "city"), egress, lease, body),
+            listener_id=registration_proxy_lease_listener_id(lease, body),
+            exit_country=registration_proxy_lease_exit_text(("exitCountry", "exit_country", "countryCode", "country_code"), egress, lease, body).upper(),
+            exit_state=registration_proxy_lease_exit_text(("exitState", "exit_state", "region", "state"), egress, lease, body).upper(),
+            exit_city=registration_proxy_lease_exit_text(("exitCity", "exit_city", "city"), egress, lease, body),
         )
 
-    def release(self, lease: ProxyRuntimeLease) -> str:
+    def release(self, lease: RegistrationProxyLease) -> str:
         payload = {"lease_id": lease.lease_id, "account_id": lease.account_id, "purpose": lease.purpose}
         response = self._session.post(self._api_base + "/leases/release", json=payload, timeout=self._timeout)
         response.raise_for_status()
@@ -130,7 +127,7 @@ class ProxyRuntimeLeaseClient:
         host = self._egress_host or text_value(egress, "host")
         port = self._egress_port or int(text_value(egress, "port") or "0")
         if not host or port <= 0:
-            raise RuntimeError("proxy-runtime lease egress is invalid")
+            raise RuntimeError("registration proxy lease egress is invalid")
         protocol = text_value(egress, "protocol").upper()
         scheme = self._egress_scheme or ("socks5h" if "SOCKS5" in protocol else "http")
         labels = dict_value(egress, "labels")
@@ -157,7 +154,7 @@ def text_value(item: dict[str, Any], *keys: str) -> str:
     return ""
 
 
-def proxy_runtime_listener_id(*items: dict[str, Any]) -> str:
+def registration_proxy_lease_listener_id(*items: dict[str, Any]) -> str:
     queue = list(items)
     while queue:
         item = queue.pop(0)
@@ -176,7 +173,7 @@ def proxy_runtime_listener_id(*items: dict[str, Any]) -> str:
     return ""
 
 
-def proxy_runtime_exit_text(keys: tuple[str, ...], *items: dict[str, Any]) -> str:
+def registration_proxy_lease_exit_text(keys: tuple[str, ...], *items: dict[str, Any]) -> str:
     queue = list(items)
     while queue:
         item = queue.pop(0)
@@ -191,7 +188,7 @@ def proxy_runtime_exit_text(keys: tuple[str, ...], *items: dict[str, Any]) -> st
     return ""
 
 
-def lease_log_fields(lease: ProxyRuntimeLease) -> dict[str, Any]:
+def lease_log_fields(lease: RegistrationProxyLease) -> dict[str, Any]:
     out: dict[str, Any] = {
         "lease_hash": probe.short_hash(lease.lease_id),
     }
@@ -344,20 +341,20 @@ def run_arm_once(
     base_args: argparse.Namespace,
     arm: FactorArm,
     stable_cache: dict[str, probe.ProbeMaterial],
-    lease_client: ProxyRuntimeLeaseClient | None = None,
+    lease_client: RegistrationProxyLeaseClient | None = None,
 ) -> dict[str, Any]:
     material = build_material(repo_root, arm, stable_cache)
     args = args_for_arm(base_args, arm)
     config = config_for_arm(arm, args)
     preflight_result: dict[str, Any] = {}
-    lease: ProxyRuntimeLease | None = None
+    lease: RegistrationProxyLease | None = None
     release_status = ""
     try:
         if lease_client is not None and not base_args.dry_run:
             lease = lease_client.acquire(
-                base_args.proxy_runtime_account_id,
-                base_args.proxy_runtime_purpose,
-                base_args.proxy_runtime_ttl,
+                base_args.registration_proxy_lease_account_id,
+                base_args.registration_proxy_lease_purpose,
+                base_args.registration_proxy_lease_ttl,
                 f"{base_args.run_id}:{arm.label}:{material.e164}:{time.time_ns()}",
             )
             args.proxy = lease.proxy_url
@@ -621,7 +618,7 @@ def run_fixed_rounds(
     args: argparse.Namespace,
     arms: list[FactorArm],
     stable_cache: dict[str, probe.ProbeMaterial],
-    lease_client: ProxyRuntimeLeaseClient | None,
+    lease_client: RegistrationProxyLeaseClient | None,
     handle: Any,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
@@ -645,7 +642,7 @@ def run_until_target_decisions(
     args: argparse.Namespace,
     arms: list[FactorArm],
     stable_cache: dict[str, probe.ProbeMaterial],
-    lease_client: ProxyRuntimeLeaseClient | None,
+    lease_client: RegistrationProxyLeaseClient | None,
     handle: Any,
 ) -> list[dict[str, Any]]:
     max_samples = args.max_samples if args.max_samples > 0 else args.samples
@@ -687,15 +684,15 @@ def main() -> int:
     parser.add_argument("--groups", default="", help="comma-separated factor groups")
     parser.add_argument("--labels", default="", help="comma-separated exact labels")
     parser.add_argument("--proxy", default="", help="HTTP proxy URL; WA_PROBE_PROXY_URL is used when omitted")
-    parser.add_argument("--lease-per-request", action="store_true", help="acquire and release a proxy-runtime dynamic lease for each outbound request")
-    parser.add_argument("--proxy-runtime-api-base", default="", help="proxy-runtime API base; PROXY_RUNTIME_API_BASE is used when omitted")
-    parser.add_argument("--proxy-runtime-auth-token", default="", help="proxy-runtime service auth token; PROXY_RUNTIME_AUTH_TOKEN is used when omitted")
-    parser.add_argument("--proxy-runtime-account-id", default="", help="proxy-runtime dynamic profile/account id")
-    parser.add_argument("--proxy-runtime-purpose", default="wa-app-probe")
-    parser.add_argument("--proxy-runtime-ttl", type=int, default=120)
-    parser.add_argument("--proxy-runtime-egress-host", default="", help="public data-plane host override for lease egress")
-    parser.add_argument("--proxy-runtime-egress-port", type=int, default=0, help="public data-plane port override for lease egress")
-    parser.add_argument("--proxy-runtime-egress-scheme", default="", help="public data-plane scheme override for lease egress")
+    parser.add_argument("--lease-per-request", action="store_true", help="acquire and release a registration proxy lease for each outbound request")
+    parser.add_argument("--registration-proxy-lease-api-base", default="", help="registration proxy lease API base; WA_REGISTRATION_PROXY_LEASE_API_BASE_URL is used when omitted")
+    parser.add_argument("--registration-proxy-lease-auth-token", default="", help="registration proxy lease API auth token; WA_REGISTRATION_PROXY_LEASE_AUTH_TOKEN is used when omitted")
+    parser.add_argument("--registration-proxy-lease-account-id", default="", help="registration proxy lease account id")
+    parser.add_argument("--registration-proxy-lease-purpose", default="wa-app-probe")
+    parser.add_argument("--registration-proxy-lease-ttl", type=int, default=120)
+    parser.add_argument("--registration-proxy-lease-egress-host", default="", help="public data-plane host override for lease egress")
+    parser.add_argument("--registration-proxy-lease-egress-port", type=int, default=0, help="public data-plane port override for lease egress")
+    parser.add_argument("--registration-proxy-lease-egress-scheme", default="", help="public data-plane scheme override for lease egress")
     parser.add_argument("--timeout", type=float, default=25)
     parser.add_argument("--sleep", type=float, default=0.6)
     parser.add_argument("--jitter", type=float, default=0.3)
@@ -706,21 +703,21 @@ def main() -> int:
     parser.add_argument("--run-id", default="")
     args = parser.parse_args()
 
-    args.proxy_runtime_api_base = (args.proxy_runtime_api_base or os.environ.get("PROXY_RUNTIME_API_BASE", "")).strip()
-    args.proxy_runtime_auth_token = (args.proxy_runtime_auth_token or os.environ.get("PROXY_RUNTIME_AUTH_TOKEN", "")).strip()
-    args.proxy_runtime_account_id = (args.proxy_runtime_account_id or os.environ.get("PROXY_RUNTIME_ACCOUNT_ID", "")).strip()
-    args.proxy_runtime_egress_host = (args.proxy_runtime_egress_host or os.environ.get("PROXY_RUNTIME_EGRESS_HOST", "")).strip()
-    args.proxy_runtime_egress_scheme = (args.proxy_runtime_egress_scheme or os.environ.get("PROXY_RUNTIME_EGRESS_SCHEME", "")).strip()
-    if args.proxy_runtime_egress_port <= 0:
-        args.proxy_runtime_egress_port = int(os.environ.get("PROXY_RUNTIME_EGRESS_PORT", "0") or "0")
+    args.registration_proxy_lease_api_base = (args.registration_proxy_lease_api_base or os.environ.get("WA_REGISTRATION_PROXY_LEASE_API_BASE_URL", "")).strip()
+    args.registration_proxy_lease_auth_token = (args.registration_proxy_lease_auth_token or os.environ.get("WA_REGISTRATION_PROXY_LEASE_AUTH_TOKEN", "")).strip()
+    args.registration_proxy_lease_account_id = (args.registration_proxy_lease_account_id or os.environ.get("WA_REGISTRATION_PROXY_LEASE_ACCOUNT_ID", "")).strip()
+    args.registration_proxy_lease_egress_host = (args.registration_proxy_lease_egress_host or os.environ.get("WA_REGISTRATION_PROXY_LEASE_EGRESS_HOST", "")).strip()
+    args.registration_proxy_lease_egress_scheme = (args.registration_proxy_lease_egress_scheme or os.environ.get("WA_REGISTRATION_PROXY_LEASE_EGRESS_SCHEME", "")).strip()
+    if args.registration_proxy_lease_egress_port <= 0:
+        args.registration_proxy_lease_egress_port = int(os.environ.get("WA_REGISTRATION_PROXY_LEASE_EGRESS_PORT", "0") or "0")
     args.proxy = probe.normalize_proxy(args.proxy or os.environ.get("WA_PROBE_PROXY_URL", ""))
     if args.lease_per_request:
         missing = [
             name
             for name, value in {
-                "PROXY_RUNTIME_API_BASE": args.proxy_runtime_api_base,
-                "PROXY_RUNTIME_AUTH_TOKEN": args.proxy_runtime_auth_token,
-                "PROXY_RUNTIME_ACCOUNT_ID": args.proxy_runtime_account_id,
+                "WA_REGISTRATION_PROXY_LEASE_API_BASE_URL": args.registration_proxy_lease_api_base,
+                "WA_REGISTRATION_PROXY_LEASE_AUTH_TOKEN": args.registration_proxy_lease_auth_token,
+                "WA_REGISTRATION_PROXY_LEASE_ACCOUNT_ID": args.registration_proxy_lease_account_id,
             }.items()
             if not value
         ]
@@ -741,13 +738,13 @@ def main() -> int:
     repo_root = Path(__file__).resolve().parents[1]
     stable_cache: dict[str, probe.ProbeMaterial] = {}
     lease_client = (
-        ProxyRuntimeLeaseClient(
-            args.proxy_runtime_api_base,
-            args.proxy_runtime_auth_token,
+        RegistrationProxyLeaseClient(
+            args.registration_proxy_lease_api_base,
+            args.registration_proxy_lease_auth_token,
             min(args.timeout, 10),
-            args.proxy_runtime_egress_host,
-            args.proxy_runtime_egress_port,
-            args.proxy_runtime_egress_scheme,
+            args.registration_proxy_lease_egress_host,
+            args.registration_proxy_lease_egress_port,
+            args.registration_proxy_lease_egress_scheme,
         )
         if args.lease_per_request and not args.dry_run
         else None
