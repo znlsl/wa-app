@@ -8,6 +8,10 @@ import { Input } from '@/components/ui/input';
 import { probeWaPhoneSMS, registerWaPhone, submitWaRegistrationOTP, type WaWorkflowResponse } from './wa-api';
 import { probeMatchesValues, registrationFailureMessage, workflowText, type WaAccountAddProbeState } from './wa-account-add-model';
 import { WhatsAppIcon } from './wa-brand-icon';
+import { waPlayIntegrityAvailable } from './wa-dashboard-config';
+import { useWaDashboardHealth, useWaPlayIntegrityAPIStatus } from './wa-dashboard-hooks';
+import { WaIntegrityModeSelect } from './wa-integrity-mode-select';
+import { DEFAULT_WA_INTEGRITY_MODE, type WaIntegrityMode } from './wa-integrity';
 import { accountReasonLabel, countdownLabel } from './wa-result-labels';
 import { waProbeStatus } from './wa-result-model';
 import { WaRegistrationChannelButtons } from './wa-registration-channel-buttons';
@@ -32,6 +36,8 @@ export function WaAccountAdd({ disabled, onChanged, onDone, onError }: Props) {
   const [clockNow, setClockNow] = useState(Date.now());
   const [otp, setOtp] = useState('');
   const [busy, setBusy] = useState(false);
+  const [integrityMode, setIntegrityMode] = useState<WaIntegrityMode>(DEFAULT_WA_INTEGRITY_MODE);
+  const health = useWaDashboardHealth();
   const samePhone = probeMatchesValues(probe, phone, countryCallingCode);
   const currentTarget = resolveWaPhoneTarget(phone, countryCallingCode).target;
   const hasPhoneTarget = Boolean(currentTarget);
@@ -47,6 +53,8 @@ export function WaAccountAdd({ disabled, onChanged, onDone, onError }: Props) {
   const detected = samePhone && Boolean(channelStatus);
   const badgeVariant = pending ? 'default' : blocked ? 'destructive' : canRegister ? 'default' : detected ? 'secondary' : 'outline';
   const badgeLabel = accountAddBadgeLabel(Boolean(pending), blocked, canRegister, nextCooldownSeconds, detected);
+  const playIntegrityAvailable = waPlayIntegrityAvailable(health);
+  const { status: playIntegrityStatus, loading: playIntegrityStatusLoading } = useWaPlayIntegrityAPIStatus(playIntegrityAvailable, integrityMode);
 
   useEffect(() => {
     const activeResult = activeRegistrationResult || (samePhone ? probe?.result : null);
@@ -97,7 +105,7 @@ export function WaAccountAdd({ disabled, onChanged, onDone, onError }: Props) {
     if (!samePhone || !channelStatus) return onError('请先检测验证通道');
     setBusy(true);
     try {
-      const result = await registerWaPhone(resolved.target.input, method.value);
+      const result = await registerWaPhone(resolved.target.input, method.value, playIntegrityAvailable ? integrityMode : undefined);
       const resultStatus = waProbeStatus(result);
       resetCooldownClock();
       setRegistrationResult(result);
@@ -147,6 +155,14 @@ export function WaAccountAdd({ disabled, onChanged, onDone, onError }: Props) {
           </div>
           {probe && !samePhone && <Badge variant="outline">号码已变化，请重新检测</Badge>}
         </FieldGroup>
+        <WaIntegrityModeSelect
+          available={playIntegrityAvailable}
+          disabled={busy || disabled || Boolean(pending)}
+          status={playIntegrityStatus}
+          statusLoading={playIntegrityStatusLoading}
+          value={integrityMode}
+          onChange={setIntegrityMode}
+        />
         <Field>
           <FieldLabel>通道</FieldLabel>
           <WaRegistrationChannelButtons

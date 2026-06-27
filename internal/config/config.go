@@ -7,15 +7,17 @@ import (
 )
 
 type Config struct {
-	DashboardAuthPass  string `env:"WA_APP_AUTH_PASSWORD"`
-	GRPCListenAddr     string `env:"WA_APP_LISTEN_ADDR"`
-	DashboardHTTPAddr  string `env:"WA_APP_DASHBOARD_HTTP_ADDR"`
-	DashboardStaticDir string `env:"WA_APP_DASHBOARD_STATIC_DIR"`
-	DataDir            string `env:"WA_APP_DATA_DIR"`
-	CommonProxy        string `env:"WA_COMMON_PROXY"`
-	PGDSN              string `env:"WA_APP_PG_DSN"`
-	RedisURL           string `env:"WA_APP_REDIS_URL"`
-	DeviceProfilesFile string `env:"WA_APP_DEVICE_PROFILES_FILE"`
+	DashboardAuthPass     string `env:"WA_APP_AUTH_PASSWORD"`
+	GRPCListenAddr        string `env:"WA_APP_LISTEN_ADDR"`
+	DashboardHTTPAddr     string `env:"WA_APP_DASHBOARD_HTTP_ADDR"`
+	DashboardStaticDir    string `env:"WA_APP_DASHBOARD_STATIC_DIR"`
+	DataDir               string `env:"WA_APP_DATA_DIR"`
+	CommonProxy           string `env:"WA_COMMON_PROXY"`
+	PGDSN                 string `env:"WA_APP_PG_DSN"`
+	RedisURL              string `env:"WA_APP_REDIS_URL"`
+	DeviceProfilesFile    string `env:"WA_APP_DEVICE_PROFILES_FILE"`
+	PlayIntegrityAPIURL   string `env:"WA_APP_PLAY_INTEGRITY_API_URL"`
+	PlayIntegrityAPIToken string `env:"WA_APP_PLAY_INTEGRITY_API_TOKEN"`
 }
 
 func Load() Config {

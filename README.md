@@ -45,6 +45,7 @@ docker compose up -d
 - `WA_APP_REDIS_URL`：可选 Redis URL；为空时使用内置 SQLite 运行态存储。
 - `WA_COMMON_PROXY`：可选 WA 出站代理；配置后所有出站走该共享代理，为空则直连。
 - `WA_APP_DEVICE_PROFILES_FILE`：可选设备画像池文件路径；为空时使用内置多机型画像。
+- `WA_APP_PLAY_INTEGRITY_API_URL` / `WA_APP_PLAY_INTEGRITY_API_TOKEN`：可选 Play Integrity token service；两者都为空时注册页不显示选择控件并默认走 GPIA `error_code`。
 
 PostgreSQL 和 Redis 都是可选组件。需要启用时，在 `docker-compose.yml` 中取消对应服务注释，并在 `.env` 中填写 `WA_APP_PG_DSN` / `WA_APP_REDIS_URL`。
 

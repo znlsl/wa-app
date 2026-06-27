@@ -26,8 +26,10 @@ const (
 
 // nativeGPIAErrorCodePool 是 GPIA 错误材料 code/_ic 可轮换的 Play Integrity 错误码,均为"设备本就
 // 做不了 Integrity"的稳定设备态(对照 APK com.google.android.play.core.integrity.model):
-//   -2 PLAY_STORE_NOT_FOUND / -6 PLAY_SERVICES_NOT_FOUND / -1 API_NOT_AVAILABLE /
-//   -4 PLAY_STORE_ACCOUNT_NOT_FOUND。
+//
+//	-2 PLAY_STORE_NOT_FOUND / -6 PLAY_SERVICES_NOT_FOUND / -1 API_NOT_AVAILABLE /
+//	-4 PLAY_STORE_ACCOUNT_NOT_FOUND。
+//
 // 刻意只收稳定态:瞬时码(-3/-12/-18 等)隐含"重试该成功",作每账号持久值不自洽;
 // 篡改/限流/配置错误码(-7/-8/-10/-11/-13/-16/-17/-19)不可用。每账号按稳定种子确定性选一个,
 // 与设备指纹一样在注册期固定,呈现"这台无 GMS 设备"的一致画像。
@@ -77,7 +79,53 @@ func buildNativeGPIAErrorMaterial(input wamsysMaterialInput) (nativeGPIAMaterial
 	if err != nil {
 		return nativeGPIAMaterial{}, err
 	}
-	deviceCompactFields := []nativeGPIAJSONField{
+	deviceCompactFields := nativeGPIADeviceCompactFields(input, sourceDir)
+	logNativeGPIAPlaintextShape(input, "device_compact", keySource, deviceCompactFields)
+	deviceCompact, err := encryptNativeGPIAJSON(keySource, deviceCompactFields)
+	if err != nil {
+		return nativeGPIAMaterial{}, err
+	}
+	return nativeGPIAMaterial{Primary: primary, CodeCompact: codeCompact, DeviceCompact: deviceCompact}, nil
+}
+
+func buildNativeGPIASuccessMaterial(input wamsysMaterialInput, token string) (nativeGPIAMaterial, error) {
+	sourceDir := nativeGPIASourceDir(input)
+	keySource := nativeGPIAKeySource(input.State)
+	primaryFields := []nativeGPIAJSONField{
+		{Key: "sizeInBytes", Value: nativeGPIASourceSize},
+		{Key: "packageName", Value: nativeGPIAPackageName},
+		{Key: "p", Value: sourceDir},
+		{Key: "cert", Value: nativeGPIACertDigest},
+		{Key: "sha256", Value: nativeGPIASourceFullDigest},
+		{Key: "shatr", Value: nativeGPIASourceDigest},
+		{Key: "code", Value: 0},
+		{Key: "token", Value: token},
+	}
+	logNativeGPIAPlaintextShape(input, "primary_long", keySource, primaryFields)
+	primary, err := encryptNativeGPIAJSON(keySource, primaryFields)
+	if err != nil {
+		return nativeGPIAMaterial{}, err
+	}
+	codeCompactFields := []nativeGPIAJSONField{
+		{Key: "_ic", Value: 0},
+		{Key: "_it", Value: token},
+	}
+	logNativeGPIAPlaintextShape(input, "token_compact", keySource, codeCompactFields)
+	codeCompact, err := encryptNativeGPIAJSON(keySource, codeCompactFields)
+	if err != nil {
+		return nativeGPIAMaterial{}, err
+	}
+	deviceCompactFields := nativeGPIADeviceCompactFields(input, sourceDir)
+	logNativeGPIAPlaintextShape(input, "device_compact", keySource, deviceCompactFields)
+	deviceCompact, err := encryptNativeGPIAJSON(keySource, deviceCompactFields)
+	if err != nil {
+		return nativeGPIAMaterial{}, err
+	}
+	return nativeGPIAMaterial{Primary: primary, CodeCompact: codeCompact, DeviceCompact: deviceCompact}, nil
+}
+
+func nativeGPIADeviceCompactFields(input wamsysMaterialInput, sourceDir string) []nativeGPIAJSONField {
+	return []nativeGPIAJSONField{
 		{Key: "_dh", Value: nativeGPIAClassesDigest},
 		{Key: "_iln", Value: nativeGPIADataSODigest},
 		{Key: "_isb", Value: nativeGPIASourceSize},
@@ -89,12 +137,6 @@ func buildNativeGPIAErrorMaterial(input wamsysMaterialInput) (nativeGPIAMaterial
 		{Key: "_icr", Value: nativeGPIACertDigest},
 		{Key: "_is", Value: nativeGPIASourceFullDigest},
 	}
-	logNativeGPIAPlaintextShape(input, "device_compact", keySource, deviceCompactFields)
-	deviceCompact, err := encryptNativeGPIAJSON(keySource, deviceCompactFields)
-	if err != nil {
-		return nativeGPIAMaterial{}, err
-	}
-	return nativeGPIAMaterial{Primary: primary, CodeCompact: codeCompact, DeviceCompact: deviceCompact}, nil
 }
 
 func nativeGPIADisplayID(state nativeState) string {
@@ -130,6 +172,15 @@ func nativeGPIAKeySource(state nativeState) string {
 		}
 	}
 	return "default"
+}
+
+func nativeGPIARequestHash(state nativeState) string {
+	keySource := nativeGPIAKeySource(state)
+	raw, err := base64.StdEncoding.DecodeString(keySource)
+	if err == nil && len(raw) == curve25519.PointSize {
+		return base64.RawStdEncoding.EncodeToString(raw)
+	}
+	return ""
 }
 
 func encryptNativeGPIAJSON(keySource string, fields []nativeGPIAJSONField) (string, error) {

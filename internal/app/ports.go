@@ -113,6 +113,7 @@ type EngineRegistrationInput struct {
 	Phone             *waappv1.PhoneTarget
 	DeliveryMethod    waappv1.VerificationDeliveryMethod
 	AuthCodeContext   string
+	IntegrityMode     nativeIntegrityMode
 }
 
 type EngineSubmitInput struct {

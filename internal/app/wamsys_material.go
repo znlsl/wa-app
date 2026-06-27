@@ -13,18 +13,22 @@ import (
 )
 
 type wamsysMaterialInput struct {
-	Capture *waappv1.WamsysCapture
-	Kind    waappv1.RegistrationRequestKind
-	Phone   *waappv1.PhoneTarget
-	State   nativeState
-	Now     time.Time
+	Capture       *waappv1.WamsysCapture
+	Kind          waappv1.RegistrationRequestKind
+	Phone         *waappv1.PhoneTarget
+	State         nativeState
+	AppVersion    string
+	IntegrityMode nativeIntegrityMode
+	Now           time.Time
 }
 
 type wamsysMaterialProvider interface {
 	RegistrationMaterial(context.Context, wamsysMaterialInput) (*waappv1.WamsysCapture, error)
 }
 
-type localWamsysMaterialProvider struct{}
+type localWamsysMaterialProvider struct {
+	playIntegrity *playIntegrityAPIClient
+}
 
 const (
 	// Native WAMSYS records path ages as time-now minus source/data/external
@@ -45,22 +49,21 @@ const (
 	nativeWamsysRequestedPermissionsDigest = "NNj5BoWX+yvZBYEY46Ze+Ad6Ykk0Z27FjgSysvkzzCU="
 )
 
-func (localWamsysMaterialProvider) RegistrationMaterial(ctx context.Context, input wamsysMaterialInput) (*waappv1.WamsysCapture, error) {
-	_ = ctx
+func (p localWamsysMaterialProvider) RegistrationMaterial(ctx context.Context, input wamsysMaterialInput) (*waappv1.WamsysCapture, error) {
 	if input.Capture != nil {
 		return input.Capture, nil
 	}
 	switch input.Kind {
 	case waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_EXIST,
 		waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_CODE:
-		return buildLocalWamsysCapture(input)
+		return p.buildLocalWamsysCapture(ctx, input)
 	default:
 		return nil, nil
 	}
 }
 
-func buildLocalWamsysCapture(input wamsysMaterialInput) (*waappv1.WamsysCapture, error) {
-	gpia, err := buildNativeGPIAErrorMaterial(input)
+func (p localWamsysMaterialProvider) buildLocalWamsysCapture(ctx context.Context, input wamsysMaterialInput) (*waappv1.WamsysCapture, error) {
+	gpia, err := p.registrationGPIAMaterial(ctx, input)
 	if err != nil {
 		return nil, err
 	}
@@ -77,6 +80,20 @@ func buildLocalWamsysCapture(input wamsysMaterialInput) (*waappv1.WamsysCapture,
 		{Key: "aid", Value: []byte(nativeWamsysAID(input.State))},
 		{Key: "_gg", Value: []byte(gpia.CodeCompact)},
 	}}, nil
+}
+
+func (p localWamsysMaterialProvider) registrationGPIAMaterial(ctx context.Context, input wamsysMaterialInput) (nativeGPIAMaterial, error) {
+	if normalizeNativeIntegrityMode(input.IntegrityMode.String()) != nativeIntegrityModePlayIntegrityAPI {
+		return buildNativeGPIAErrorMaterial(input)
+	}
+	if p.playIntegrity == nil {
+		return nativeGPIAMaterial{}, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "play integrity api is not configured", false)
+	}
+	token, err := p.playIntegrity.Issue(ctx, input)
+	if err != nil {
+		return nativeGPIAMaterial{}, err
+	}
+	return buildNativeGPIASuccessMaterial(input, token)
 }
 
 func nativeWamsysAID(state nativeState) string {
@@ -224,10 +241,12 @@ func (e *NativeEngine) applyRuntimeWamsys(
 	kind waappv1.RegistrationRequestKind,
 	phone *waappv1.PhoneTarget,
 	state nativeState,
+	appVersion string,
+	integrityMode nativeIntegrityMode,
 	params map[string]string,
 	rawKeys map[string]struct{},
 ) error {
-	capture, err := e.wamsysProvider().RegistrationMaterial(ctx, wamsysMaterialInput{Kind: kind, Phone: phone, State: state, Now: e.clock.Now()})
+	capture, err := e.wamsysProvider().RegistrationMaterial(ctx, wamsysMaterialInput{Kind: kind, Phone: phone, State: state, AppVersion: appVersion, IntegrityMode: integrityMode, Now: e.clock.Now()})
 	if err != nil {
 		return err
 	}

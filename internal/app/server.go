@@ -45,6 +45,25 @@ func (s *Server) SetCommonProxyURL(common string) {
 	s.commonProxyURL = strings.TrimSpace(common)
 }
 
+func (s *Server) PlayIntegrityAPIConfigured() bool {
+	if s == nil {
+		return false
+	}
+	engine, ok := s.runner.(*NativeEngine)
+	return ok && engine.PlayIntegrityAPIConfigured()
+}
+
+func (s *Server) PlayIntegrityAPIStatus(ctx context.Context) PlayIntegrityAPIStatus {
+	if s == nil {
+		return PlayIntegrityAPIStatus{Configured: false, Available: false, RawValuesPrinted: false}
+	}
+	engine, ok := s.runner.(*NativeEngine)
+	if !ok {
+		return PlayIntegrityAPIStatus{Configured: false, Available: false, RawValuesPrinted: false}
+	}
+	return engine.PlayIntegrityAPIStatus(ctx)
+}
+
 func (s *Server) RunLongConnections(ctx context.Context) error {
 	if s == nil || s.longConnections == nil {
 		return nil

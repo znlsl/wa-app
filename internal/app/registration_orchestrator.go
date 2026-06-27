@@ -22,6 +22,7 @@ func (s *Server) StartRegistration(ctx context.Context, payload map[string]any) 
 	basePayload["proxy_session_mode"] = firstNonEmpty(textField(basePayload, "proxy_session_mode"), "STICKY")
 	method := registrationMethodFromPayload(basePayload)
 	authCodeContext := authCodeContextFromPayload(basePayload)
+	integrityMode := nativeIntegrityModeFromPayload(basePayload)
 	if reason := directRegistrationMethodUnsupportedReason(method); reason != "" {
 		return rejectedRegistrationResult(basePayload, registrationMethodUnsupportedMap(method, reason)), nil
 	}
@@ -36,13 +37,13 @@ func (s *Server) StartRegistration(ctx context.Context, payload map[string]any) 
 		return nil, err
 	}
 	defer runner.CloseIdleConnections()
-	probeResult, state := runner.probeAccountWithState(ctx, EngineRegistrationInput{AppVersion: defaultWAAppVersion, Phone: phone, DeliveryMethod: method, AuthCodeContext: authCodeContext}, state)
+	probeResult, state := runner.probeAccountWithState(ctx, EngineRegistrationInput{AppVersion: defaultWAAppVersion, Phone: phone, DeliveryMethod: method, AuthCodeContext: authCodeContext, IntegrityMode: integrityMode}, state)
 	_ = gateway.saveRegistrationAttemptState(context.Background(), stateRef, state)
 	logRegistrationProbeResult(basePayload, phone, route, method, probeResult)
 	if !registrationProbeAllowsMethod(probeResult, method) {
 		return rejectedRegistrationResult(basePayload, registrationProbeFailureMap(probeResult, route, managedRoute)), nil
 	}
-	codeResult, method, updatedState := gateway.requestVerificationCodeWithFallback(ctx, runner, phone, method, authCodeContext, state, stateRef)
+	codeResult, method, updatedState := gateway.requestVerificationCodeWithFallback(ctx, runner, phone, method, authCodeContext, integrityMode, state, stateRef)
 	logRegistrationCodeResult(basePayload, phone, route, method, codeResult)
 	if !verificationCodeRequestAccepted(codeResult) {
 		return rejectedRegistrationResult(basePayload, registrationRequestFailureMap(codeResult, method, route, managedRoute)), nil
@@ -282,13 +283,13 @@ var registrationFallbackMethods = map[waappv1.VerificationDeliveryMethod]bool{
 // server lists in fallback_methods when the current method fails non-terminally
 // (next_method, no_routes, provider timeout, cooldown). It stops on the first
 // accepted request, a terminal rejection, or once no offered method remains.
-func (g *actionGateway) requestVerificationCodeWithFallback(ctx context.Context, runner *NativeEngine, phone *waappv1.PhoneTarget, requested waappv1.VerificationDeliveryMethod, authCodeContext string, state nativeState, stateRef string) (EngineCodeResult, waappv1.VerificationDeliveryMethod, nativeState) {
+func (g *actionGateway) requestVerificationCodeWithFallback(ctx context.Context, runner *NativeEngine, phone *waappv1.PhoneTarget, requested waappv1.VerificationDeliveryMethod, authCodeContext string, integrityMode nativeIntegrityMode, state nativeState, stateRef string) (EngineCodeResult, waappv1.VerificationDeliveryMethod, nativeState) {
 	tried := map[waappv1.VerificationDeliveryMethod]bool{}
 	current := requested
 	currentState := state
 	var result EngineCodeResult
 	for {
-		result, currentState = runner.requestVerificationCodeWithState(ctx, EngineRegistrationInput{AppVersion: defaultWAAppVersion, Phone: phone, DeliveryMethod: current, AuthCodeContext: authCodeContext}, currentState)
+		result, currentState = runner.requestVerificationCodeWithState(ctx, EngineRegistrationInput{AppVersion: defaultWAAppVersion, Phone: phone, DeliveryMethod: current, AuthCodeContext: authCodeContext, IntegrityMode: integrityMode}, currentState)
 		_ = g.saveRegistrationAttemptState(context.Background(), stateRef, currentState)
 		tried[current] = true
 		if verificationCodeRequestAccepted(result) || !codeFailureAllowsFallback(result) {

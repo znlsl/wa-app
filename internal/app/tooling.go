@@ -224,7 +224,7 @@ func (e *NativeEngine) BuildRegistrationRequest(ctx context.Context, req *waappv
 		}
 	default:
 		if hasState {
-			built, err := e.codeRequestOrderedParamsWithWamsys(ctx, phone, method, state, "", req.GetWamsysCapture(), req.GetIncludeWamsysMap())
+			built, err := e.codeRequestOrderedParamsWithWamsys(ctx, phone, method, state, "", req.GetWamsysCapture(), req.GetIncludeWamsysMap(), defaultWAAppVersion, nativeIntegrityModeErrorCode)
 			if err != nil {
 				return nil, err
 			}
@@ -242,7 +242,7 @@ func (e *NativeEngine) BuildRegistrationRequest(ctx context.Context, req *waappv
 	if kind != waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_EXIST {
 		params.set("method", firstNonEmpty(params.get("method"), methodName), false)
 	}
-	wamsysCapture, err := e.wamsysProvider().RegistrationMaterial(ctx, wamsysMaterialInput{Capture: req.GetWamsysCapture(), Kind: kind, Phone: phone, State: state, Now: e.clock.Now()})
+	wamsysCapture, err := e.wamsysProvider().RegistrationMaterial(ctx, wamsysMaterialInput{Capture: req.GetWamsysCapture(), Kind: kind, Phone: phone, State: state, AppVersion: defaultWAAppVersion, IntegrityMode: nativeIntegrityModeErrorCode, Now: e.clock.Now()})
 	if err != nil {
 		return nil, err
 	}

@@ -15,11 +15,12 @@ import (
 )
 
 const (
-	defaultWAAppVersion  = "2.26.24.77"
-	defaultWAABPropURL   = "https://y9yrsygcg6.execute-api.us-east-1.amazonaws.com/s/s?_=/v2/reg_onboard_abprop&"
-	defaultWAExistURL    = "https://y9yrsygcg6.execute-api.us-east-1.amazonaws.com/s/s?_=/v2/exist&"
-	defaultWACodeURL     = "https://y9yrsygcg6.execute-api.us-east-1.amazonaws.com/s/s?_=/v2/code&"
-	defaultWARegisterURL = "https://y9yrsygcg6.execute-api.us-east-1.amazonaws.com/s/s?_=/v2/register&"
+	defaultWAAppVersion     = "2.26.24.77"
+	defaultWAAppVersionCode = 262407730
+	defaultWAABPropURL      = "https://y9yrsygcg6.execute-api.us-east-1.amazonaws.com/s/s?_=/v2/reg_onboard_abprop&"
+	defaultWAExistURL       = "https://y9yrsygcg6.execute-api.us-east-1.amazonaws.com/s/s?_=/v2/exist&"
+	defaultWACodeURL        = "https://y9yrsygcg6.execute-api.us-east-1.amazonaws.com/s/s?_=/v2/code&"
+	defaultWARegisterURL    = "https://y9yrsygcg6.execute-api.us-east-1.amazonaws.com/s/s?_=/v2/register&"
 
 	nativeDefaultSMSCodeLength int32 = 6
 )
@@ -53,6 +54,14 @@ func NewNativeEngine(stateStore NativeStateStore, clock Clock, ids IDGenerator) 
 	return &NativeEngine{stateStore: stateStore, http: hc, clock: clock, ids: ids, wamsys: localWamsysMaterialProvider{}}, nil
 }
 
+func (e *NativeEngine) WithPlayIntegrityAPI(endpoint, token string) (*NativeEngine, error) {
+	client, err := newPlayIntegrityAPIClient(endpoint, token)
+	if err != nil {
+		return nil, err
+	}
+	return &NativeEngine{stateStore: e.stateStore, activeProxyURL: e.activeProxyURL, http: e.http, clock: e.clock, ids: e.ids, wamsys: localWamsysMaterialProvider{playIntegrity: client}}, nil
+}
+
 func (e *NativeEngine) WithProxyURL(proxyURL string) (*NativeEngine, error) {
 	proxyURL, err := normalizeProxyURLString(proxyURL)
 	if err != nil {
@@ -70,6 +79,19 @@ func (e *NativeEngine) wamsysProvider() wamsysMaterialProvider {
 		return e.wamsys
 	}
 	return localWamsysMaterialProvider{}
+}
+
+func (e *NativeEngine) PlayIntegrityAPIConfigured() bool {
+	provider, ok := e.wamsysProvider().(localWamsysMaterialProvider)
+	return ok && provider.playIntegrity != nil
+}
+
+func (e *NativeEngine) PlayIntegrityAPIStatus(ctx context.Context) PlayIntegrityAPIStatus {
+	provider, ok := e.wamsysProvider().(localWamsysMaterialProvider)
+	if !ok || provider.playIntegrity == nil {
+		return PlayIntegrityAPIStatus{Configured: false, Available: false, RawValuesPrinted: false}
+	}
+	return provider.playIntegrity.Status(ctx)
 }
 
 func (e *NativeEngine) CloseIdleConnections() {
@@ -106,7 +128,7 @@ func (e *NativeEngine) probeAccountWithState(ctx context.Context, input EngineRe
 		return EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}, state
 	}
 	params, rawKeys := e.existParams(input.Phone, state)
-	if err := e.applyRuntimeWamsys(ctx, waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_EXIST, input.Phone, state, params, rawKeys); err != nil {
+	if err := e.applyRuntimeWamsys(ctx, waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_EXIST, input.Phone, state, input.AppVersion, input.IntegrityMode, params, rawKeys); err != nil {
 		return EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}, state
 	}
 	logNativeRegistrationMapShape("exist", input.Phone, input.DeliveryMethod, params, rawKeys)
@@ -161,7 +183,7 @@ func (e *NativeEngine) requestVerificationCodeWithState(ctx context.Context, inp
 		return EngineCodeResult{Status: waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_REJECTED, Err: err}, state
 	}
 	state.nextGenerateCodeAttempt()
-	params, err := e.codeRequestOrderedParams(ctx, input.Phone, input.DeliveryMethod, state, input.AuthCodeContext)
+	params, err := e.codeRequestOrderedParams(ctx, input.Phone, input.DeliveryMethod, state, input.AuthCodeContext, input.AppVersion, input.IntegrityMode)
 	if err != nil {
 		return EngineCodeResult{Status: waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_REJECTED, Err: err}, state
 	}

@@ -73,11 +73,11 @@ func (e *NativeEngine) registrationToken(phone *waappv1.PhoneTarget, state nativ
 	return state.LastCodeParams["token"]
 }
 
-func (e *NativeEngine) codeRequestOrderedParams(ctx context.Context, phone *waappv1.PhoneTarget, method waappv1.VerificationDeliveryMethod, state nativeState, authCodeContext string) (orderedParams, error) {
-	return e.codeRequestOrderedParamsWithWamsys(ctx, phone, method, state, authCodeContext, nil, true)
+func (e *NativeEngine) codeRequestOrderedParams(ctx context.Context, phone *waappv1.PhoneTarget, method waappv1.VerificationDeliveryMethod, state nativeState, authCodeContext string, appVersion string, integrityMode nativeIntegrityMode) (orderedParams, error) {
+	return e.codeRequestOrderedParamsWithWamsys(ctx, phone, method, state, authCodeContext, nil, true, appVersion, integrityMode)
 }
 
-func (e *NativeEngine) codeRequestOrderedParamsWithWamsys(ctx context.Context, phone *waappv1.PhoneTarget, method waappv1.VerificationDeliveryMethod, state nativeState, authCodeContext string, wamsysCapture *waappv1.WamsysCapture, includeWamsys bool) (orderedParams, error) {
+func (e *NativeEngine) codeRequestOrderedParamsWithWamsys(ctx context.Context, phone *waappv1.PhoneTarget, method waappv1.VerificationDeliveryMethod, state nativeState, authCodeContext string, wamsysCapture *waappv1.WamsysCapture, includeWamsys bool, appVersion string, integrityMode nativeIntegrityMode) (orderedParams, error) {
 	methodName := registrationMethodName(method, "sms")
 	fields := nativeDeviceMapFields(state)
 	attempts := nativeCodeRequestAttempts(state)
@@ -111,7 +111,7 @@ func (e *NativeEngine) codeRequestOrderedParamsWithWamsys(ctx context.Context, p
 	var capture *waappv1.WamsysCapture
 	if includeWamsys {
 		var err error
-		capture, err = e.wamsysProvider().RegistrationMaterial(ctx, wamsysMaterialInput{Capture: wamsysCapture, Kind: waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_CODE, Phone: phone, State: state, Now: e.clock.Now()})
+		capture, err = e.wamsysProvider().RegistrationMaterial(ctx, wamsysMaterialInput{Capture: wamsysCapture, Kind: waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_CODE, Phone: phone, State: state, AppVersion: appVersion, IntegrityMode: integrityMode, Now: e.clock.Now()})
 		if err != nil {
 			return nil, err
 		}

@@ -43,6 +43,7 @@ func runDashboardHTTP(ctx context.Context, listenAddr, staticDir string, service
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/wa/health", server.handleHealth)
+	mux.HandleFunc("/api/wa/play-integrity/status", server.handlePlayIntegrityAPIStatus)
 	mux.HandleFunc("/api/wa/phone/sms-probe", server.handlePhoneSMSProbe)
 	mux.HandleFunc("/api/wa/register", server.handleRegister)
 	mux.HandleFunc("/api/wa/login-state-check", server.handleLoginStateCheck)
@@ -575,12 +576,40 @@ func newWAActionHandler(service *app.Server) http.Handler {
 }
 
 func (s *dashboardHTTP) handleHealth(w http.ResponseWriter, _ *http.Request) {
+	playIntegrityConfigured := false
+	if s.service != nil {
+		playIntegrityConfigured = s.service.PlayIntegrityAPIConfigured()
+	}
+	integrityModes := []string{"error_code"}
+	if playIntegrityConfigured {
+		integrityModes = append(integrityModes, "play_integrity_api")
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok": true,
+		"capabilities": map[string]bool{
+			"play_integrity_api": playIntegrityConfigured,
+		},
+		"registration": map[string]any{
+			"integrity_modes": integrityModes,
+		},
 		"workflows": []map[string]string{
 			{"key": "register-native", "label": "WA 原生注册流程", "webhook_path": "/api/wa/register"},
 		},
 	})
+}
+
+func (s *dashboardHTTP) handlePlayIntegrityAPIStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if s.service == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"configured": false, "available": false, "rawValuesPrinted": false})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	writeJSON(w, http.StatusOK, s.service.PlayIntegrityAPIStatus(ctx))
 }
 
 func (s *dashboardHTTP) handlePhoneSMSProbe(w http.ResponseWriter, r *http.Request) {

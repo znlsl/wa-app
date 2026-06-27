@@ -176,6 +176,10 @@ func logNativeGPIAPlaintextShape(input wamsysMaterialInput, label string, keySou
 		)
 		return
 	}
+	jsonHash := stableID(string(plaintext))
+	if nativeGPIAFieldsContainSensitive(fields) {
+		jsonHash = "sensitive"
+	}
 	log.Printf(
 		"wa_registration_gpia_plaintext_shape kind=%s phone_hash=%s label=%s key_source_len=%d key_source_hash=%s json_len=%d json_hash=%s keys=%s fields=%s",
 		probeLogValue(registrationRequestKindName(input.Kind)),
@@ -184,7 +188,7 @@ func logNativeGPIAPlaintextShape(input wamsysMaterialInput, label string, keySou
 		len([]byte(keySource)),
 		stableID(keySource),
 		len(plaintext),
-		stableID(string(plaintext)),
+		jsonHash,
 		probeLogValue(nativeGPIAFieldKeys(fields)),
 		probeLogValue(nativeGPIAFieldShapes(fields)),
 	)
@@ -235,6 +239,9 @@ func nativeGPIAFieldShapes(fields []nativeGPIAJSONField) string {
 func nativeGPIAFieldShape(field nativeGPIAJSONField) string {
 	switch value := field.Value.(type) {
 	case string:
+		if nativeGPIAFieldSensitive(field.Key) {
+			return field.Key + ":string:" + strconv.Itoa(len([]byte(value))) + ":sensitive"
+		}
 		return field.Key + ":string:" + strconv.Itoa(len([]byte(value))) + ":" + stableID(value)
 	case int:
 		return field.Key + ":number:int:" + strconv.Itoa(value)
@@ -247,6 +254,24 @@ func nativeGPIAFieldShape(field nativeGPIAJSONField) string {
 	default:
 		return field.Key + ":type:" + probeLogValue(strconv.Quote(fmt.Sprintf("%T", value)))
 	}
+}
+
+func nativeGPIAFieldSensitive(key string) bool {
+	switch key {
+	case "token", "_it":
+		return true
+	default:
+		return false
+	}
+}
+
+func nativeGPIAFieldsContainSensitive(fields []nativeGPIAJSONField) bool {
+	for _, field := range fields {
+		if nativeGPIAFieldSensitive(field.Key) {
+			return true
+		}
+	}
+	return false
 }
 
 func wamsysInputPhoneHash(input wamsysMaterialInput) string {

@@ -52,6 +52,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("initialize wa-app native engine: %v", err)
 	}
+	if strings.TrimSpace(cfg.PlayIntegrityAPIURL) != "" || strings.TrimSpace(cfg.PlayIntegrityAPIToken) != "" {
+		engine, err = engine.WithPlayIntegrityAPI(cfg.PlayIntegrityAPIURL, cfg.PlayIntegrityAPIToken)
+		if err != nil {
+			log.Fatalf("initialize play integrity api client: %v", err)
+		}
+	}
 	if strings.TrimSpace(cfg.CommonProxy) != "" {
 		engine, err = engine.WithProxyURL(cfg.CommonProxy)
 		if err != nil {
